@@ -1,0 +1,5 @@
+name: "EMAsymmetricBinary"
+params:
+  seed: ${seed}
+  tol: 1e-8
+  max_iter: 100
