@@ -152,3 +152,16 @@ class EMAsymmetricBinary:
         prob_1 = self.e_step(ests)
         group_ests = np.array(prob_1 > 0.5, dtype=np.int32)
         return group_ests
+
+class MajorityVote:
+    
+    def __init__(self, num_models: int):
+        self.num_models = num_models
+    
+    def fit(self, ests: np.ndarray):
+        return
+    
+    def predict(self, ests: np.ndarray):
+        assert ests.shape[1] == self.num_models
+        group_ests = np.array(np.mean(ests, axis=1) > 0.5, dtype=np.int32)
+        return group_ests

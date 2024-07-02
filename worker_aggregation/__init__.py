@@ -1,2 +1,2 @@
-from .em_binary import EMSymmetricBinary, EMAsymmetricBinary
+from .binary_policies import EMSymmetricBinary, EMAsymmetricBinary, MajorityVote
 from .data_loaders import HaluDialogueBinary
