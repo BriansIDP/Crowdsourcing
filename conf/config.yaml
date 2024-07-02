@@ -1,0 +1,9 @@
+defaults:
+  - policy: em_sym_bin
+  - data_loader: halu_dialogue_bin
+  - override hydra/launcher: joblib
+  - _self_
+
+main:
+  seed_split: 42069
+  data_split: 'train'
