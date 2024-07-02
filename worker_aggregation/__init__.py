@@ -1,2 +1,2 @@
-from .em_binary import EMSymmetricBinary
+from .em_binary import EMSymmetricBinary, EMAsymmetricBinary
 from .data_loaders import HaluDialogueBinary
