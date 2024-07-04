@@ -144,3 +144,9 @@ wandb/
 
 # outputs
 outputs/
+
+# logs
+logs/
+
+# multi-run outputs
+multirun/
