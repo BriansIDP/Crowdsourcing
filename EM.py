@@ -71,8 +71,8 @@ def EM_orig(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=0):
         m += 1
     Z_hat = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
     print("Done with {} steps".format(m))
-    print("Precision Matrix")
-    print(np.linalg.inv(Sigma_hat))
+    # print("Precision Matrix")
+    # print(np.linalg.inv(Sigma_hat))
     weight = np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat).sum(axis=-1) * v_bar
     return 1 / (1 + np.exp(-Z_hat)), weight, Sigma_hat
 
