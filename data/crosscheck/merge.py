@@ -24,12 +24,16 @@ with open(infile) as fin:
 
 with open(sidefile) as fin:
     dataside = json.load(fin)
+for i, passage in enumerate(dataside):
+    for system, scores in passage.items():
+        scores = [sum(s) for s in scores]
+        datain["results"][i][system] = scores
 
-data = []
-for i, datapiece in enumerate(datain):
-    fullpiece = {**datapiece, **dataside[i]}
-    # fullpiece = {**datapiece, **data2[i], **data3[i], **data4[i], **data5[i], **data6[i], **data7[i]}
-    data.append(fullpiece)
+# data = []
+# for i, datapiece in enumerate(datain):
+#     fullpiece = {**datapiece, **dataside[i]}
+#     # fullpiece = {**datapiece, **data2[i], **data3[i], **data4[i], **data5[i], **data6[i], **data7[i]}
+#     data.append(fullpiece)
 
-with open(infile, "w") as fout:
-    json.dump(data, fout, indent=4)
+with open("merged.json", "w") as fout:
+    json.dump(datain, fout, indent=4)

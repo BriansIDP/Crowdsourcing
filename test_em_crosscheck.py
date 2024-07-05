@@ -13,6 +13,7 @@ def get_crosscheck_data(llm_to_rank, evidence_llm):
     selfcheckscores = {}
     cov_crosscheck = {}
     for llm in evidence_llm:
+        print(llm)
         selfcheckscores[llm] = []
         cov_crosscheck[llm] = {}
         with open("data/crosscheck/crosscheck_prompt_{}.json".format(llm)) as fin:
@@ -87,7 +88,7 @@ if __name__ == "__main__":
     llm_to_rank = "gpt3"
 
     # evidence_llm = ["mistral", "llama2", "vicuna", "zephyr", "beluga", "starling", "openorca", "llama2lm"]
-    evidence_llm = ["mistral", "llama2", "vicuna"]
+    evidence_llm = ["mistral", "llama2", "vicuna", "beluga", "starling", "openorca"]
 
     caliberation = 0.1
     cov_crosscheck, crosscheckscore, refcheckscore = get_crosscheck_data(llm_to_rank, evidence_llm)
