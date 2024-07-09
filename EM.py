@@ -75,7 +75,7 @@ def EM_orig(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=0):
     # print("Precision Matrix")
     # print(np.linalg.inv(Sigma_hat))
     weight = np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat).sum(axis=-1) * v_bar
-    return 1 / (1 + np.exp(-Z_hat)), weight, Sigma_hat
+    return Z_hat, weight, Sigma_hat
 
 
 def EM_bimodal(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=0, assign="mean", labels=None):
@@ -98,8 +98,18 @@ def EM_bimodal(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=
             mean_vec = - labels + 0.5
         # if m > 1:
         #     mean_vec = z_hat
-        pos_mask = mean_vec >= 0
-        neg_mask = mean_vec < 0
+        if assign == "likelihood":
+            Z_hat_pos = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
+            Z_hat_neg = np.matmul(data + mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar - mu_bar
+            pos_mean_dev = data - Z_hat_pos[:, None]
+            exp_pos = - np.sum(np.matmul(pos_mean_dev, np.linalg.inv(Sigma_hat)) * pos_mean_dev, axis=-1)
+            neg_mean_dev = data - Z_hat_neg[:, None]
+            exp_neg = - np.sum(np.matmul(neg_mean_dev, np.linalg.inv(Sigma_hat)) * neg_mean_dev, axis=-1)
+            pos_mask = exp_pos >= exp_neg
+            neg_mask = exp_pos < exp_neg
+        else:
+            pos_mask = mean_vec >= 0
+            neg_mask = mean_vec < 0
         mu_bimodal = pos_mask * mu_bar - neg_mask * mu_bar
 
         z_prev = z_hat
@@ -114,10 +124,29 @@ def EM_bimodal(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=
     # check how many signs of mean_vec and Z_hat are different
     print("Mean and Z_hat sign difference: {}".format(((mean_vec >= 0) != (Z_hat >= 0)).sum()))
     print("Done with {} steps".format(m))
+    Sigma_hat_inv = np.linalg.inv(Sigma_hat)
+    v_hat = 1 / (v_bar + Sigma_hat_inv.sum())
+
+    # Inference
+    # if assign == "gt":
+    # Z_hat_pos = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
+    # Z_hat_neg = np.matmul(data + mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar - mu_bar
+    # pos_mean_dev = data - Z_hat_pos[:, None]
+    # exp_pos = - np.sum(np.matmul(pos_mean_dev, np.linalg.inv(Sigma_hat)) * pos_mean_dev, axis=-1)
+    # neg_mean_dev = data - Z_hat_neg[:, None]
+    # exp_neg = - np.sum(np.matmul(neg_mean_dev, np.linalg.inv(Sigma_hat)) * neg_mean_dev, axis=-1)
+    # pos_mask = exp_pos >= exp_neg
+    # neg_mask = exp_pos < exp_neg
+    mean_vec = data.mean(axis=-1)
+    pos_mask = mean_vec >= 0
+    neg_mask = mean_vec < 0
+    mu_bimodal = pos_mask * mu_bar - neg_mask * mu_bar
+    Z_hat = np.matmul(data - mu_bimodal[:, None], np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bimodal
+    print("Done with {} steps\tExpected error: {}".format(m, v_hat))
     print("Precision Matrix")
     print(np.linalg.inv(Sigma_hat))
     weight = np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat).sum(axis=-1) * v_bar
-    return 1 / (1 + np.exp(-Z_hat)), weight, Sigma_hat
+    return Z_hat, weight, Sigma_hat
 
 
 def main(args):
@@ -168,25 +197,30 @@ def main(args):
             rho_bar=0.0,
             c=0,
             M=10000,
-            v_bar=1,
+            v_bar=5,
             mu_bar=0,
         )
     elif args.algorithm == "em_bimodal":
         pred, weight, Sigma_hat = EM_bimodal(
             data,
             len(model_list),
-            sigma_bar=2,
+            sigma_bar=20,
             rho_bar=0.0,
             c=0,
             M=10000,
-            v_bar=v_bar_gen if artificial else 5,
-            mu_bar=mu_bar_gen if artificial else mu_bar,
-            assign="gt",
+            v_bar=v_bar_gen if artificial else 25,
+            mu_bar=mu_bar_gen if artificial else 5,
+            assign="mean",
             labels=labels,
         )
-    print(weight)
+    print("Actual Estimation of Sigma:")
+    # print(weight)
     print(Sigma_hat)
+    print("Actual Estimation of mean:")
+    print(pred)
+    np.save("outputs/zhat_2_5_gt.npy", pred)
     # pred = 1 / (1 + np.exp(-np.matmul(data, np.array([0.2, 0.8]))))
+    pred = 1 / (1 + np.exp(-pred))
     predicts = pred < 0.5
     hits = (labels == predicts).sum()
     print("EM Acc: {:.3f}".format(hits / len(labels)))
