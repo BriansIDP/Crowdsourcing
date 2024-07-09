@@ -17,7 +17,7 @@ def get_data(datapath, model_list):
         with open(os.path.join(datapath, "halueval_dialogue_{}.json".format(model))) as fin:
             modeldata = json.load(fin)[model]
         for datapiece in modeldata:
-            true_label = 1 if datapiece["ref"] == "yes" else 0
+            true_label = 0 if datapiece["ref"] == "yes" else 1
             labels.append(true_label)
             dataset[model].append(datapiece["prob"])
             if datapiece["prob"][0] > datapiece["prob"][1] and true_label == 0:
@@ -195,7 +195,7 @@ if __name__ == "__main__":
     commandLineParser.add_argument(
         "--algorithm",
         type=str,
-        default="em_orig",
+        default="em_bimodal",
         choices=["em_orig", "em_bimodal"],
         help="Aggregation method",
     )
