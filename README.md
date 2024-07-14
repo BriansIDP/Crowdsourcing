@@ -31,4 +31,4 @@ Predict with PEW
 ```
 ./eval.sh
 ```
-There are loads of local directories - please change to your local ones.
+There are some local directories - please change to your local ones.
