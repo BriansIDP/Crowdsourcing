@@ -82,7 +82,8 @@ class EMAsymmetricBinary:
     def __init__(self, seed: int, 
                  num_models: int,
                  skill_init: np.ndarray = None,
-                 tol: float = 1e-8, max_iter: int = 100):
+                 tol: float = 1e-8, max_iter: int = 100,
+                 reg_m_step: float = 0):
         self.rng = np.random.default_rng(seed)
         self.num_models = num_models
         # skill: probability of answering correctly
@@ -93,6 +94,7 @@ class EMAsymmetricBinary:
         assert np.all(self.skill >= 0.5) and np.all(self.skill <= 1)
         self.epsilon = tol
         self.max_iter = max_iter
+        self.reg_m_step = reg_m_step
     
     def fit(self, ests: np.ndarray):
         num_samples = ests.shape[0]
@@ -136,10 +138,14 @@ class EMAsymmetricBinary:
     def m_step(self, ests: np.ndarray, prob_1: np.ndarray):
         skill = np.zeros((self.num_models,2))*np.nan
         for j in range(self.num_models):
-            arr = prob_1*ests[:, j] 
-            skill[j,1] = np.mean(arr)/np.mean(prob_1)
-            arr = (1-prob_1)*(1-ests[:, j])
-            skill[j,0] = np.mean(arr)/np.mean(1-prob_1)
+            ests_j_with_reg = np.append(ests[:, j], 0.5)
+            prob_1_with_reg = np.append(prob_1, self.reg_m_step)
+            # arr = prob_1*ests[:, j] 
+            arr = prob_1_with_reg*ests_j_with_reg
+            skill[j,1] = np.mean(arr)/np.mean(prob_1_with_reg)
+            one_minus_prob_1_with_reg = np.append(1-prob_1, self.reg_m_step)
+            arr = one_minus_prob_1_with_reg*(1-ests_j_with_reg)
+            skill[j,0] = np.mean(arr)/np.mean(one_minus_prob_1_with_reg)
         try:
             assert np.all(skill >= 0) and np.all(skill <= 1)
         except:

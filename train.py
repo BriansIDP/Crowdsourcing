@@ -14,12 +14,18 @@ def get_data(cfg):
 
     # here is 60-20-20 split
     # TODO: make split percent configurable
-    seed_split = cfg.main.seed_split
-    ests_train_val, ests_test, outcome_train_val, outcome_test = \
-        train_test_split(all_ests, outcomes, test_size=0.2, random_state=seed_split)
+    # seed_split = cfg.main.seed_split
+    # ests_train_val, ests_test, outcome_train_val, outcome_test = \
+    #     train_test_split(all_ests, outcomes, test_size=0.2, random_state=seed_split)
 
-    ests_train, ests_val, outcome_train, outcome_val = \
-        train_test_split(ests_train_val, outcome_train_val, test_size=0.25, random_state=seed_split)
+    # ests_train, ests_val, outcome_train, outcome_val = \
+    #     train_test_split(ests_train_val, outcome_train_val, test_size=0.25, random_state=seed_split)
+    ests_train = all_ests
+    outcome_train = outcomes
+    ests_val = all_ests
+    outcome_val = outcomes
+    ests_test = all_ests
+    outcome_test = outcomes
     
     return {"train": (ests_train, outcome_train), "val": (ests_val, outcome_val), "test": (ests_test, outcome_test)}
 
