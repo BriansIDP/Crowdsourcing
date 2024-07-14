@@ -97,3 +97,19 @@ class TestEMAsymmetricBinary:
         print("true logit skill", logit_skill)
         print("EM logit skill", logit_em_skill)
         print("Asymmetric synthetic data test passed")
+
+    def test_reg_m_step(self, synthetic_data_asym):
+        num_samples = 10
+        num_models = 3
+        reg_m_step = 1000
+        ests, _, _ = synthetic_data_asym(seed=42, num_samples=num_samples, 
+                                             num_models=num_models)
+        em_model = EMAsymmetricBinary(seed=42, num_models=num_models, reg_m_step=reg_m_step)
+        em_model.fit(ests)
+        exp_skill = 0.5*np.ones((num_models, 2))
+        logit_skill = np.log(exp_skill) - np.log(1-exp_skill)
+        logit_em_skill = np.log(em_model.skill) - np.log(1-em_model.skill)
+        assert np.allclose(logit_skill, logit_em_skill, atol=5e-1)
+        print("true logit skill", logit_skill)
+        print("EM logit skill", logit_em_skill)
+        print("Asymmetric synthetic data test passed")
