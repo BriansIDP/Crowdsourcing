@@ -29,7 +29,7 @@ class WorkerPredictor(torch.nn.Module):
         super(WorkerPredictor, self).__init__()
         self.llm = AutoModelForCausalLM.from_pretrained(
             model_path,
-            cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",
+            cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
         )
         self.nllms = nllms
         inner_dim = self.llm.config.hidden_size + self.nllms - 1
