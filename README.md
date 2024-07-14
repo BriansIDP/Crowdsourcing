@@ -22,3 +22,13 @@ python train.py policy=em_sym_bin policy.params.seed=0 data_loader=halu_dialogue
 python train.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
 python train.py policy=majority_vote data_loader=halu_dialogue_bin
 ```
+
+Train PEW using GPT-2:
+```
+./train.sh
+```
+Predict with PEW
+```
+./eval.sh
+```
+There are loads of local directories - please change to your local ones.
