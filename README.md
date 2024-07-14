@@ -22,3 +22,8 @@ python train.py policy=em_sym_bin policy.params.seed=0 data_loader=halu_dialogue
 python train.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
 python train.py policy=majority_vote data_loader=halu_dialogue_bin
 ```
+
+Basic usage of EM with Gaussian mixture model (GMM):
+```
+python train.py data_loader=halu_dialogue_logit policy=em_gmm
+```

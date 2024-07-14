@@ -73,12 +73,12 @@ class TestPolicy:
         precision_init = np.diag([rng.gamma(shape=10)]*dim)
         bias_init = rng.multivariate_normal(mean=np.zeros(dim), 
                                             cov=prior_var_of_bias*np.eye(dim))
-        alg = EMGaussian(estimates=estimates,
+        alg = EMGaussian(dim=dim,
                          prior_var_of_bias=prior_var_of_bias, prior_mean_of_cov_diag_el=prior_mean_of_cov_diag_el, 
                          prior_var_of_cov=prior_var_of_cov, precision_init=precision_init,
                          bias_init=bias_init)
         
-        out = alg.run()
+        out = alg.fit(estimates)
         weights = out["weights"]
         bias = out["bias"]
 
@@ -107,13 +107,13 @@ class TestPolicy:
         precision_init = np.diag([rng.gamma(shape=10)]*dim)
         bias_init = rng.multivariate_normal(mean=np.zeros(dim), 
                                             cov=prior_var_of_bias*np.eye(dim))
-        alg = EMGaussian(estimates=estimates,
+        alg = EMGaussian(dim=dim,
                          prior_var_of_bias=prior_var_of_bias, 
                          prior_mean_of_cov_diag_el=prior_mean_of_cov_diag_el, 
                          prior_var_of_cov=prior_var_of_cov, precision_init=precision_init,
                          bias_init=bias_init)
         
-        out = alg.run()
+        out = alg.fit(estimates)
         weights = out["weights"]
         bias = out["bias"]
 
@@ -143,13 +143,12 @@ class TestPolicy:
         bias_init = rng.multivariate_normal(mean=np.zeros(dim), 
                                             cov=prior_var_of_bias*np.eye(dim))
         prior_var = small_prior_var["prior_var"]
-        alg = EMGaussian(estimates=estimates,
+        alg = EMGaussian(dim=dim,
                          prior_var_of_bias=prior_var_of_bias, 
                          prior_mean_of_cov_diag_el=prior_mean_of_cov_diag_el, 
                          prior_var_of_cov=prior_var_of_cov, precision_init=precision_init,
                          bias_init=bias_init, prior_var_of_outcomes=prior_var)
-        
-        out = alg.run()
+        out = alg.fit(estimates)
         weights = out["weights"]
         bias = out["bias"]
 

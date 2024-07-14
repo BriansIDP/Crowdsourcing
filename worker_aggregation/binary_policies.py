@@ -4,25 +4,25 @@ from tqdm import trange
 class EMSymmetricBinary:
     
     def __init__(self, seed: int, 
-                 num_models: int,
+                 num_workers: int,
                  skill_init: np.ndarray = None,
                  tol: float = 1e-8, max_iter: int = 100):
         self.rng = np.random.default_rng(seed)
-        self.num_models = num_models
+        self.num_workers = num_workers
         # self.pi = np.ones(num_classes) / num_classes
         # skill: probability of answering correctly
         if skill_init is not None:
             self.skill = skill_init
         else:
-            self.skill = (self.rng.random(num_models)+1)/2
+            self.skill = (self.rng.random(num_workers)+1)/2
         assert np.all(self.skill >= 0.5) and np.all(self.skill <= 1)
-        # assert self.theta.shape == (2, num_models)
+        # assert self.theta.shape == (2, num_workers)
         self.epsilon = tol
         self.max_iter = max_iter
     
     def fit(self, ests: np.ndarray):
         num_samples = ests.shape[0]
-        assert ests.shape[1] == self.num_models
+        assert ests.shape[1] == self.num_workers
         # probability that the true label is 1
         prob_1 = np.zeros(num_samples)*np.nan
         for i in trange(self.max_iter):
@@ -60,8 +60,8 @@ class EMSymmetricBinary:
         return prob_1
     
     def m_step(self, ests: np.ndarray, prob_1: np.ndarray):
-        skill = np.zeros(self.num_models)*np.nan
-        for j in range(self.num_models):
+        skill = np.zeros(self.num_workers)*np.nan
+        for j in range(self.num_workers):
             arr = prob_1*ests[:, j] + (1 - prob_1)*(1 - ests[:, j])
             skill[j] = np.mean(arr)
         try:
@@ -80,17 +80,17 @@ class EMSymmetricBinary:
 class EMAsymmetricBinary:
     
     def __init__(self, seed: int, 
-                 num_models: int,
+                 num_workers: int,
                  skill_init: np.ndarray = None,
                  tol: float = 1e-8, max_iter: int = 100,
                  reg_m_step: float = 0):
         self.rng = np.random.default_rng(seed)
-        self.num_models = num_models
+        self.num_workers = num_workers
         # skill: probability of answering correctly
         if skill_init is not None:
             self.skill = skill_init
         else:
-            self.skill = (self.rng.random((num_models,2))+1)/2
+            self.skill = (self.rng.random((num_workers,2))+1)/2
         assert np.all(self.skill >= 0.5) and np.all(self.skill <= 1)
         self.epsilon = tol
         self.max_iter = max_iter
@@ -98,7 +98,7 @@ class EMAsymmetricBinary:
     
     def fit(self, ests: np.ndarray):
         num_samples = ests.shape[0]
-        assert ests.shape[1] == self.num_models
+        assert ests.shape[1] == self.num_workers
         # probability that the true label is 1
         prob_1 = np.zeros(num_samples)*np.nan
         for i in trange(self.max_iter):
@@ -136,8 +136,8 @@ class EMAsymmetricBinary:
         return prob_1
     
     def m_step(self, ests: np.ndarray, prob_1: np.ndarray):
-        skill = np.zeros((self.num_models,2))*np.nan
-        for j in range(self.num_models):
+        skill = np.zeros((self.num_workers,2))*np.nan
+        for j in range(self.num_workers):
             ests_j_with_reg = np.append(ests[:, j], 0.5)
             prob_1_with_reg = np.append(prob_1, self.reg_m_step)
             # arr = prob_1*ests[:, j] 
@@ -161,13 +161,13 @@ class EMAsymmetricBinary:
 
 class MajorityVote:
     
-    def __init__(self, num_models: int):
-        self.num_models = num_models
+    def __init__(self, num_workers: int):
+        self.num_workers = num_workers
     
     def fit(self, ests: np.ndarray):
         return
     
     def predict(self, ests: np.ndarray):
-        assert ests.shape[1] == self.num_models
+        assert ests.shape[1] == self.num_workers
         group_ests = np.array(np.mean(ests, axis=1) > 0.5, dtype=np.int32)
         return group_ests
