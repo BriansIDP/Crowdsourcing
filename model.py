@@ -59,7 +59,7 @@ class WorkerPredictor(torch.nn.Module):
         pred_hiddens = []
         for i in range(self.nllms):
             each_pred = torch.relu(getattr(self, "outproj_{}".format(i+1))(pred_hidden[:, i]))
-            each_pred = getattr(self, "outlayer_{}".format(i+1))(pred_hidden[:, i])
+            each_pred = getattr(self, "outlayer_{}".format(i+1))(each_pred)
             pred_hiddens.append(each_pred)
         pred_hidden = torch.cat(pred_hiddens, dim=1)
         if self.regression == "mse":
@@ -92,7 +92,7 @@ class WorkerPredictor(torch.nn.Module):
         pred_hiddens = []
         for i in range(self.nllms):
             each_pred = torch.relu(getattr(self, "outproj_{}".format(i+1))(pred_hidden[:, i]))
-            each_pred = getattr(self, "outlayer_{}".format(i+1))(pred_hidden[:, i])
+            each_pred = getattr(self, "outlayer_{}".format(i+1))(each_pred)
             pred_hiddens.append(each_pred)
         pred_hidden = torch.cat(pred_hiddens, dim=1)
         if self.regression == "logistic":

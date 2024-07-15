@@ -1,7 +1,7 @@
 . /scratch/OpenSource/espnet/tools/anaconda/etc/profile.d/conda.sh && conda deactivate && conda activate hallucination
 
 trainfile="data/halueval_dialogue.json"
-expdir="exp/pew_gpt2_logistic"
+expdir="exp/pew_gpt2_mselogits"
 
 python predict.py \
     --model_path $expdir \

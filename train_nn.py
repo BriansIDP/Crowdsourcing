@@ -112,9 +112,10 @@ def train_one_epoch(
     trainsize = len(train_dataloader)
     start = time.time()
     for i, batch in enumerate(train_dataloader):
-        inputs, labels = batch
+        inputs, workers, labels = batch
         loss = model(
             inputs,
+            workers,
             labels,
         )
         loss = loss / args.gradient_accumulation_steps
