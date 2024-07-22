@@ -17,7 +17,7 @@ def get_data(datapath, model_list):
         with open(os.path.join(datapath, "halueval_dialogue_{}.json".format(model))) as fin:
             modeldata = json.load(fin)[model]
         for datapiece in modeldata:
-            true_label = 1 if datapiece["ref"] == "yes" else 0
+            true_label = 0 if datapiece["ref"] == "yes" else 1
             labels.append(true_label)
             dataset[model].append(datapiece["prob"])
             if datapiece["prob"][0] > datapiece["prob"][1] and true_label == 0:
@@ -72,8 +72,8 @@ def EM_orig(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=0):
         m += 1
     Z_hat = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
     print("Done with {} steps".format(m))
-    print("Precision Matrix")
-    print(np.linalg.inv(Sigma_hat))
+    # print("Precision Matrix")
+    # print(np.linalg.inv(Sigma_hat))
     weight = np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat).sum(axis=-1) * v_bar
     return 1 / (1 + np.exp(-Z_hat)), weight, Sigma_hat
 
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     commandLineParser.add_argument(
         "--algorithm",
         type=str,
-        default="em_orig",
+        default="em_bimodal",
         choices=["em_orig", "em_bimodal"],
         help="Aggregation method",
     )

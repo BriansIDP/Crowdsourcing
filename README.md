@@ -32,3 +32,13 @@ Basic usage of EM original
 ```
 python train.py data_loader=halu_dialogue_logit policy=em_orig
 ```
+
+Train PEW using GPT-2:
+```
+./train.sh
+```
+Predict with PEW
+```
+./eval.sh
+```
+There are some local directories - please change to your local ones.
