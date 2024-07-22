@@ -29,7 +29,8 @@ def mse_based_on_weights(cov_true: np.ndarray, bias_true: np.ndarray,
     return mse
 
 
-def generate_data(dim, bias, data_seed=0, timesteps=2000, prior_mean=0, prior_var=1):
+def generate_data(bias, data_seed=0, timesteps=10000, prior_mean=0, prior_var=1):
+    dim = 3
     cov_mat = nl.inv(np.array(
             [[1/5, 1/10, 0],
              [1/10, 1/5, 1/10],
@@ -46,19 +47,19 @@ def generate_data(dim, bias, data_seed=0, timesteps=2000, prior_mean=0, prior_va
 def zero_bias():
     dim = 3
     bias = np.zeros(dim)
-    return generate_data(dim, bias)
+    return generate_data(bias)
 
 @pytest.fixture
 def non_zero_bias():
     dim = 3
     bias = np.array([1/2**0.5, 0, -1/2**0.5])
-    return generate_data(dim, bias)
+    return generate_data(bias)
 
 @pytest.fixture
 def small_prior_var():
     dim = 3
     bias = np.zeros(dim)
-    return generate_data(dim, bias, prior_var=0.1)
+    return generate_data(bias, prior_var=0.1)
 
 class TestPolicy:
 
@@ -73,12 +74,12 @@ class TestPolicy:
         precision_init = np.diag([rng.gamma(shape=10)]*dim)
         bias_init = rng.multivariate_normal(mean=np.zeros(dim), 
                                             cov=prior_var_of_bias*np.eye(dim))
-        alg = EMGaussian(estimates=estimates,
+        alg = EMGaussian(num_workers=dim,
                          prior_var_of_bias=prior_var_of_bias, prior_mean_of_cov_diag_el=prior_mean_of_cov_diag_el, 
                          prior_var_of_cov=prior_var_of_cov, precision_init=precision_init,
                          bias_init=bias_init)
         
-        out = alg.run()
+        out = alg.fit(estimates)
         weights = out["weights"]
         bias = out["bias"]
 
@@ -107,13 +108,13 @@ class TestPolicy:
         precision_init = np.diag([rng.gamma(shape=10)]*dim)
         bias_init = rng.multivariate_normal(mean=np.zeros(dim), 
                                             cov=prior_var_of_bias*np.eye(dim))
-        alg = EMGaussian(estimates=estimates,
+        alg = EMGaussian(num_workers=dim,
                          prior_var_of_bias=prior_var_of_bias, 
                          prior_mean_of_cov_diag_el=prior_mean_of_cov_diag_el, 
                          prior_var_of_cov=prior_var_of_cov, precision_init=precision_init,
                          bias_init=bias_init)
         
-        out = alg.run()
+        out = alg.fit(estimates)
         weights = out["weights"]
         bias = out["bias"]
 
@@ -143,13 +144,12 @@ class TestPolicy:
         bias_init = rng.multivariate_normal(mean=np.zeros(dim), 
                                             cov=prior_var_of_bias*np.eye(dim))
         prior_var = small_prior_var["prior_var"]
-        alg = EMGaussian(estimates=estimates,
+        alg = EMGaussian(num_workers=dim,
                          prior_var_of_bias=prior_var_of_bias, 
                          prior_mean_of_cov_diag_el=prior_mean_of_cov_diag_el, 
                          prior_var_of_cov=prior_var_of_cov, precision_init=precision_init,
                          bias_init=bias_init, prior_var_of_outcomes=prior_var)
-        
-        out = alg.run()
+        out = alg.fit(estimates)
         weights = out["weights"]
         bias = out["bias"]
 

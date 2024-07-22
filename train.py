@@ -8,7 +8,7 @@ def get_data(cfg):
     data_constructor = worker_aggregation.__dict__[cfg.data_loader.name]
     est_dict, outcomes = data_constructor.get_data(cfg.data_loader.params)
     model_list = list(est_dict.keys())
-    all_ests = np.zeros((len(outcomes), len(model_list)), dtype=np.int32)
+    all_ests = np.zeros((len(outcomes), len(model_list)))
     for i, model in enumerate(model_list):
         all_ests[:, i] = est_dict[model]
 
@@ -31,8 +31,8 @@ def get_data(cfg):
 
 def get_policy(cfg):
     policy_constructor = worker_aggregation.__dict__[cfg.policy.name]
-    num_models = len(cfg.data_loader.params.model_list)
-    policy = policy_constructor(**cfg.policy.params, num_models=num_models)
+    num_workers = len(cfg.data_loader.params.model_list)
+    policy = policy_constructor(**cfg.policy.params, num_workers=num_workers)
     return policy
 
 @hydra.main(version_base=None, config_path="./conf", config_name="config")
@@ -43,6 +43,8 @@ def main(cfg):
     policy.fit(ests)
     group_ests = policy.predict(ests)
     accuracy = np.mean(group_ests == outcomes)
+    if cfg.policy.name == "EM_GMM":
+        print(cfg.policy.params.cov_mat_diag)
     print(f"Accuracy: {accuracy:.3f}")
 
 if __name__ == "__main__":

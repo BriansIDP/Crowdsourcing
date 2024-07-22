@@ -23,6 +23,16 @@ python train.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogu
 python train.py policy=majority_vote data_loader=halu_dialogue_bin
 ```
 
+Basic usage of EM with Gaussian mixture model (GMM):
+```
+python train.py data_loader=halu_dialogue_logit policy=em_gmm
+```
+
+Basic usage of EM original
+```
+python train.py data_loader=halu_dialogue_logit policy=em_orig
+```
+
 Train PEW using GPT-2:
 ```
 ./train.sh

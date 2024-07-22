@@ -129,16 +129,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# Data folders
-instances_1000/
-instances_10000/
-plots/
-results_1000/
-results_10000/
-results_ind_1000/
-results_ind_10000/
-summary/
-
 # wandb
 wandb/
 
@@ -150,3 +140,6 @@ logs/
 
 # multi-run outputs
 multirun/
+
+# dev
+dev/

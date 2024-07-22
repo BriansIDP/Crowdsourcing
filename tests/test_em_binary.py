@@ -5,15 +5,15 @@ from worker_aggregation import EMSymmetricBinary, EMAsymmetricBinary
 
 @pytest.fixture
 def synthetic_data_sym():
-    def _synthetic_data(seed: int, num_samples: int, num_models: int):
+    def _synthetic_data(seed: int, num_samples: int, num_workers: int):
         rng = np.random.default_rng(seed)
-        skill = 0.5 + 0.5*rng.random(num_models)
-        ests = np.zeros((num_samples, num_models), dtype=np.int32)
+        skill = 0.5 + 0.5*rng.random(num_workers)
+        ests = np.zeros((num_samples, num_workers), dtype=np.int32)
         true_labels = np.zeros(num_samples, dtype=np.int32)
         for i in range(num_samples):
             true_label = rng.integers(0, 2)
             true_labels[i] = true_label
-            for j in range(num_models):
+            for j in range(num_workers):
                 if true_label == 1:
                     ests[i, j] = rng.choice([0, 1], p=[1-skill[j], skill[j]])
                 else:
@@ -23,15 +23,15 @@ def synthetic_data_sym():
 
 @pytest.fixture
 def synthetic_data_asym():
-    def _synthetic_data(seed: int, num_samples: int, num_models: int):
+    def _synthetic_data(seed: int, num_samples: int, num_workers: int):
         rng = np.random.default_rng(seed)
-        skill = 0.5 + 0.5*rng.random((num_models, 2))
-        ests = np.zeros((num_samples, num_models), dtype=np.int32)
+        skill = 0.5 + 0.5*rng.random((num_workers, 2))
+        ests = np.zeros((num_samples, num_workers), dtype=np.int32)
         true_labels = np.zeros(num_samples, dtype=np.int32)
         for i in range(num_samples):
             true_label = rng.integers(0, 2)
             true_labels[i] = true_label
-            for j in range(num_models):
+            for j in range(num_workers):
                 if true_label == 1:
                     ests[i, j] = rng.choice([0, 1], p=[1-skill[j,1], skill[j,1]])
                 else:
@@ -42,7 +42,7 @@ def synthetic_data_asym():
 class TestEMSymmetricBinary:
     def test_single_sample(self,):
         skill_init = np.array([0.6, 0.7, 0.8])
-        em_model = EMSymmetricBinary(seed=42, num_models=3, skill_init=skill_init)
+        em_model = EMSymmetricBinary(seed=42, num_workers=3, skill_init=skill_init)
         ests = np.array([[0, 1, 1]])
         exp_prob_1 = 0.4*0.7*0.8/(0.4*0.7*0.8 + 0.6*0.3*0.2)
         prob_1 = em_model.e_step(ests)
@@ -59,9 +59,9 @@ class TestEMSymmetricBinary:
     
     def test_synthetic_data(self, synthetic_data_sym):
         num_samples = 10000
-        num_models = 5
-        ests, _, skill = synthetic_data_sym(seed=42, num_samples=num_samples, num_models=num_models)
-        em_model = EMSymmetricBinary(seed=42, num_models=num_models)
+        num_workers = 5
+        ests, _, skill = synthetic_data_sym(seed=42, num_samples=num_samples, num_workers=num_workers)
+        em_model = EMSymmetricBinary(seed=42, num_workers=num_workers)
         em_model.fit(ests)
         logit_skill = np.log(skill) - np.log(1-skill)
         logit_em_skill = np.log(em_model.skill) - np.log(1-em_model.skill)
@@ -73,11 +73,11 @@ class TestEMSymmetricBinary:
 class TestEMAsymmetricBinary:
     def test_sym_synthetic_data(self, synthetic_data_sym):
         num_samples = 10000
-        num_models = 5
-        ests, _, skill = synthetic_data_sym(seed=42, num_samples=num_samples, num_models=num_models)
-        em_model = EMAsymmetricBinary(seed=42, num_models=num_models)
+        num_workers = 5
+        ests, _, skill = synthetic_data_sym(seed=42, num_samples=num_samples, num_workers=num_workers)
+        em_model = EMAsymmetricBinary(seed=42, num_workers=num_workers)
         em_model.fit(ests)
-        skill_full = np.ones((num_models, 2))*skill[:, None]
+        skill_full = np.ones((num_workers, 2))*skill[:, None]
         logit_skill = np.log(skill_full) - np.log(1-skill_full)
         logit_em_skill = np.log(em_model.skill) - np.log(1-em_model.skill)
         assert np.allclose(logit_skill, logit_em_skill, atol=1e-1)
@@ -87,9 +87,9 @@ class TestEMAsymmetricBinary:
     
     def test_asym_synthetic_data(self, synthetic_data_asym):
         num_samples = 10000
-        num_models = 3
-        ests, _, skill = synthetic_data_asym(seed=42, num_samples=num_samples, num_models=num_models)
-        em_model = EMAsymmetricBinary(seed=42, num_models=num_models)
+        num_workers = 3
+        ests, _, skill = synthetic_data_asym(seed=42, num_samples=num_samples, num_workers=num_workers)
+        em_model = EMAsymmetricBinary(seed=42, num_workers=num_workers)
         em_model.fit(ests)
         logit_skill = np.log(skill) - np.log(1-skill)
         logit_em_skill = np.log(em_model.skill) - np.log(1-em_model.skill)
@@ -100,13 +100,13 @@ class TestEMAsymmetricBinary:
 
     def test_reg_m_step(self, synthetic_data_asym):
         num_samples = 10
-        num_models = 3
+        num_workers = 3
         reg_m_step = 1000
         ests, _, _ = synthetic_data_asym(seed=42, num_samples=num_samples, 
-                                             num_models=num_models)
-        em_model = EMAsymmetricBinary(seed=42, num_models=num_models, reg_m_step=reg_m_step)
+                                             num_workers=num_workers)
+        em_model = EMAsymmetricBinary(seed=42, num_workers=num_workers, reg_m_step=reg_m_step)
         em_model.fit(ests)
-        exp_skill = 0.5*np.ones((num_models, 2))
+        exp_skill = 0.5*np.ones((num_workers, 2))
         logit_skill = np.log(exp_skill) - np.log(1-exp_skill)
         logit_em_skill = np.log(em_model.skill) - np.log(1-em_model.skill)
         assert np.allclose(logit_skill, logit_em_skill, atol=5e-1)
