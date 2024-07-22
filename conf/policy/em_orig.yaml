@@ -1,0 +1,9 @@
+name: "EMGaussian"
+params:
+  prior_var_of_bias: 1
+  prior_mean_of_cov_diag_el: 1
+  prior_var_of_cov: 1
+  max_iters: 100
+  tolerance: 1e-15
+  bias_known: True
+  prior_var_of_outcomes: 1

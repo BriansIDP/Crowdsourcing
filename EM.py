@@ -105,12 +105,14 @@ def EM_bimodal(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=
         z_prev = z_hat
         Sigma_hat_inv = np.linalg.inv(Sigma_hat)
         z_hat = np.matmul(data - mu_bimodal[:, None], np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bimodal
-        v_hat = 1 / (v_bar + Sigma_hat_inv.sum())
+        v_hat = 1 / (1/v_bar + Sigma_hat_inv.sum())
         Y_cov = np.matmul((data-z_hat[:, None]).transpose(), data-z_hat[:, None])
         Y_cov += T * v_hat * np.ones((N, N))
         Sigma_hat = Y_cov / T
         m += 1
     Z_hat = np.matmul(data - mu_bimodal[:, None], np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bimodal
+    # check how many signs of mean_vec and Z_hat are different
+    print("Mean and Z_hat sign difference: {}".format(((mean_vec >= 0) != (Z_hat >= 0)).sum()))
     print("Done with {} steps".format(m))
     print("Precision Matrix")
     print(np.linalg.inv(Sigma_hat))

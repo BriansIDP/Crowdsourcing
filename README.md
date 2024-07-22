@@ -27,3 +27,8 @@ Basic usage of EM with Gaussian mixture model (GMM):
 ```
 python train.py data_loader=halu_dialogue_logit policy=em_gmm
 ```
+
+Basic usage of EM original
+```
+python train.py data_loader=halu_dialogue_logit policy=em_orig
+```
