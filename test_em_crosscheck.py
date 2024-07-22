@@ -2,7 +2,7 @@ import json
 import numpy as np
 from scipy.stats import spearmanr, pearsonr
 
-from EM import EM_orig, EM_bimodal
+from EM import EM_orig, EM_bimodal, EM_bimodal_biased
 
 def get_crosscheck_data(llm_to_rank, evidence_llm):
 
@@ -13,7 +13,6 @@ def get_crosscheck_data(llm_to_rank, evidence_llm):
     selfcheckscores = {}
     cov_crosscheck = {}
     for llm in evidence_llm:
-        print(llm)
         selfcheckscores[llm] = []
         cov_crosscheck[llm] = {}
         with open("data/crosscheck/crosscheck_prompt_{}.json".format(llm)) as fin:
@@ -46,8 +45,8 @@ def get_crosscheck_data(llm_to_rank, evidence_llm):
             refcheckscores.append(sum(para_score)/len(para_score))
     else:
         with open("data/crosscheck/crosscheck_prompt_{}_refcheck.json".format(llm_to_rank)) as fin:
-            data = json.load(fin)
-        for paragraph in data:
+            refdata = json.load(fin)
+        for paragraph in refdata:
             refcheckscores.append(sum(paragraph["ref"]) / len(paragraph["ref"]))
     refcheckscores = np.array(refcheckscores)
 
@@ -77,18 +76,39 @@ def test_crosscheck(crosscheckscore, refcheckscore, cov_crosscheck, caliberation
     print("Inverse variance average Passage level: {:.5f}".format(pearsonr(refcheckscore, inverse_var_ave[:, 0])[0]))
     print("="*89)
     logdata = - np.log(1 / (crosscheckscore+1e-5) - 1 + 1e-5)
-    EM_ave, weight, Sigma_hat = EM_orig(logdata, n_systems, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=2, mu_bar=0)
-    # EM_ave, weight, Sigma_hat = EM_bimodal(logdata, n_systems, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=2, mu_bar=2)
+    # EM_ave, weight, Sigma_hat = EM_orig(logdata, n_systems, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=10, mu_bar=0)
+    EM_ave, weight, Sigma_hat = EM_bimodal(logdata, n_systems, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=2, mu_bar=0)
+    print("Inverse covariance weights:", weight)
+    EM_ave = 1 / (np.exp(- EM_ave) + 1 - 1e-5) - 1e-5
     print("Inverse covariance average Passage level: {:.5f}".format(pearsonr(refcheckscore, EM_ave)[0]))
     print("="*89)
+    # EM_ave, Sigma_hat_pos, Sigma_hat_neg, m_hat_pos, m_hat_neg = EM_bimodal_biased(
+    #     logdata,
+    #     sigma_bar=2,
+    #     rho_bar=0.0,
+    #     c=0,
+    #     M=10000,
+    #     v_bar=5,
+    #     mu_bar=0,
+    #     assign="mean",
+    #     m_bar=0,
+    #     tied=True,
+    # )
+    # EM_ave = 1 / (np.exp(- EM_ave) + 1 - 1e-5) - 1e-5
+    # print("Predicted pos means: {}".format(m_hat_pos))
+    # print("Predicted neg means: {}".format(m_hat_neg))
+    # print("Biased Gaussian noise average Passage level: {:.5f}".format(pearsonr(refcheckscore, EM_ave)[0]))
+    # print("="*89)
     return
 
 
 if __name__ == "__main__":
-    llm_to_rank = "gpt3"
+    llm_to_rank = "vicuna"
 
-    # evidence_llm = ["mistral", "llama2", "vicuna", "zephyr", "beluga", "starling", "openorca", "llama2lm"]
-    evidence_llm = ["mistral", "llama2", "vicuna", "beluga", "starling", "openorca"]
+    evidence_llm = ["mistral", "llama2", "vicuna", "zephyr", "beluga", "starling", "openorca", "llama2lm"]
+    # evidence_llm = ["mistral", "llama2", "vicuna", "beluga", "starling", "openorca", "gpt3"]
+    print("LLM under checking: {}".format(llm_to_rank))
+    print(evidence_llm)
 
     caliberation = 0.1
     cov_crosscheck, crosscheckscore, refcheckscore = get_crosscheck_data(llm_to_rank, evidence_llm)
