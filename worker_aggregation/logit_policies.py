@@ -184,13 +184,17 @@ class EM_GMM:
             prob1 = self.do_e_step(ests)
             mean0, mean1, cov0, cov1 = self.do_m_step(ests, prob1)
             if i>0:
-                if np.max(np.abs(mean0-mean0_prev))<self.tol:
+                # if np.max(np.abs(mean0-mean0_prev))<self.tol:
+                #     break
+                if nl.norm(prob1_prev-prob1)/len(prob1)**0.5<self.tol:
+                    # print(nl.norm(prob1_prev-prob1)/len(prob1)**0.5)
                     break
-            mean0_prev = mean0.copy()
-        self.mean0 = mean0
-        self.mean1 = mean1
-        self.cov0 = cov0
-        self.cov1 = cov1
+            # mean0_prev = mean0.copy()
+            prob1_prev = prob1.copy()
+            self.mean0 = mean0
+            self.mean1 = mean1
+            self.cov0 = cov0
+            self.cov1 = cov1
     
     def predict(self, ests: np.ndarray) -> np.ndarray:
         prob1 = self.do_e_step(ests)

@@ -18,7 +18,7 @@ class HaluDialogueBinary:
             with open(filepath) as fin:
                 modeldata = json.load(fin)[model]
             for datapiece in modeldata:
-                outcome = 1 if datapiece["ref"] == "yes" else 0
+                outcome = 0 if datapiece["ref"] == "yes" else 1
                 outcomes.append(outcome)
                 # est_dict[model].append(datapiece["prob"])
                 est = np.argmax(datapiece["prob"])
@@ -45,7 +45,7 @@ class HaluDialogueLogit:
             with open(filepath) as fin:
                 modeldata = json.load(fin)[model]
             for datapiece in modeldata:
-                outcome = 1 if datapiece["ref"] == "yes" else 0
+                outcome = 0 if datapiece["ref"] == "yes" else 1
                 outcomes.append(outcome)
                 # est_dict[model].append(datapiece["prob"])
                 # est = np.argmax(datapiece["prob"])
@@ -73,7 +73,7 @@ class HaluQABinary:
             with open(filepath) as fin:
                 modeldata = json.load(fin)[model]
             for datapiece in modeldata:
-                outcome = 1 if datapiece["ref"] == "yes" else 0
+                outcome = 0 if datapiece["ref"] == "yes" else 1
                 outcomes.append(outcome)
                 # est_dict[model].append(datapiece["prob"])
                 est = np.argmax(datapiece["prob"])
