@@ -8,6 +8,8 @@ import json
 from collections import OrderedDict
 
 import torch
+import numpy as np
+from scipy.stats import spearmanr, pearsonr
 from tqdm import tqdm
 from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM
@@ -34,12 +36,15 @@ def main(args):
         train_args = json.load(fin)
     tokenizer = AutoTokenizer.from_pretrained(train_args["model_path"])
     llm_list = train_args["evidence_llm"].split(',')
+    task = "halueval" if "halueval" in args.testfile else "crosscheck"
 
     testdata = WorkerDataset(
         args.testfile,
         tokenizer,
         evidence_llm=llm_list,
         evalmode=True,
+        task=task,
+        split=1.0, # train_args['split'] if 'split' in train_args else 1.0,
     )
     test_dataloader = DataLoader(
         testdata,
@@ -64,20 +69,22 @@ def main(args):
     total_samples = 0
     predictions = []
     all_errors = []
-    with torch.no_grad():
-        for i, batch in enumerate(tqdm(test_dataloader)):
-            inputs, workers, labels = batch
-            prediction = model.predict(
-                inputs,
-                workers,
-                aggregation="ex_error",
-            )
-            all_errors.append(prediction)
-        all_errors = torch.cat(all_errors, dim=0)
-        all_errors = all_errors.mean(dim=0)
+    all_labels = []
+    if args.aggregation == "grad":
+        with torch.no_grad():
+            for i, batch in enumerate(tqdm(test_dataloader)):
+                inputs, workers, labels = batch
+                prediction, probs = model.predict(
+                    inputs,
+                    workers,
+                    aggregation="ex_error",
+                )
+                all_errors.append(prediction)
+            all_errors = torch.cat(all_errors, dim=0)
+            all_errors = all_errors.mean(dim=0)
     for i, batch in enumerate(tqdm(test_dataloader)):
         inputs, workers, labels = batch
-        prediction = model.predict(
+        prediction, probs = model.predict(
             inputs,
             workers,
             aggregation=args.aggregation,
@@ -85,9 +92,17 @@ def main(args):
         )
         total_hits += (prediction == labels[:, 0]).sum()
         total_samples += prediction.size(0)
-        predictions.extend(prediction.tolist())
-    print("Accuracy: {:.5f}".format(total_hits / total_samples))
-
+        if task == "halueval":
+            predictions.extend(prediction.tolist())
+        elif task == "crosscheck":
+            predictions.extend(probs.tolist())
+        all_labels.extend(labels[:, 0].tolist())
+    if task == "halueval":
+        print("Accuracy: {:.5f}".format(total_hits / total_samples))
+    elif task == "crosscheck":
+        predictions = np.array(predictions)
+        all_labels = np.array(all_labels)
+        print("PCC: {:.2f}".format(pearsonr(predictions, all_labels)[0]*100))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LLM finetuning")

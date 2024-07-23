@@ -3,6 +3,7 @@ import json
 import argparse
 
 import numpy as np
+from scipy.stats import norm
 
 
 np.random.seed(1)
@@ -59,7 +60,7 @@ def EM_Gmixture(data, sigma_bar=2, rho_bar=0, M=10000, p=0.5, mu_1_init=1, mu_2_
     Sigma_bar = np.identity(N) * sigma_bar + (np.ones((N, N)) - np.identity(N)) * rho_bar
     Sigma_hat_1 = Sigma_bar
     Sigma_hat_2 = Sigma_bar
-    epsilon = 1e-8
+    epsilon = 1e-10
     m = 0
     T = data.shape[0]
     q_1 = p * np.ones(T)
@@ -72,7 +73,6 @@ def EM_Gmixture(data, sigma_bar=2, rho_bar=0, M=10000, p=0.5, mu_1_init=1, mu_2_
         print(np.max(np.abs((mu_2 - mu_2_prev))))
         q_1_prev = q_1
         mu_2_prev = mu_2
-
         # E-step
         det_Sigma_1 = np.linalg.det(Sigma_hat_1)
         det_Sigma_2 = np.linalg.det(Sigma_hat_2)
@@ -118,8 +118,7 @@ def EM_orig(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=0):
         Sigma_hat_inv = np.linalg.inv(Sigma_hat)
         # z_hat = np.matmul(data, Sigma_hat_inv).sum(axis=-1) / (1 + Sigma_hat_inv.sum())
         z_hat = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
-        # changed from 1/(v_bar + ...) to 1/(1/v_bar + ...)
-        v_hat = 1 / (1/v_bar + Sigma_hat_inv.sum())
+        v_hat = 1 / (v_bar + Sigma_hat_inv.sum())
         Y_cov = np.matmul((data-z_hat[:, None]).transpose(), data-z_hat[:, None])
         Y_cov += T * v_hat * np.ones((N, N))
         # Sigma_hat = (c * Sigma_bar + Y_cov) / (c + 2 * N + T + 1)
@@ -185,8 +184,6 @@ def EM_bimodal(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=
     # Inference
     Z_hat_pos = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
     Z_hat_neg = np.matmul(data + mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar - mu_bar
-    print("Positive:", Z_hat_pos)
-    print("Negative:", Z_hat_neg)
     pos_mean_dev = data - Z_hat_pos[:, None]
     exp_pos = np.exp(-0.5 * np.sum(np.matmul(pos_mean_dev, np.linalg.inv(Sigma_hat)) * pos_mean_dev, axis=-1))
     neg_mean_dev = data - Z_hat_neg[:, None]
@@ -374,7 +371,7 @@ def main(args):
         predicts = pred < 0.5
         hits = (labels == predicts).sum()
     elif args.algorithm == "em_bimodal":
-        pred, weight, Sigma_hat = EM_bimodal(
+        pred, v_hat, weight, Sigma_hat = EM_bimodal(
             data,
             len(model_list),
             sigma_bar=2,

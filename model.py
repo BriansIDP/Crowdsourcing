@@ -33,18 +33,20 @@ class WorkerPredictor(torch.nn.Module):
         )
         self.nllms = nllms
         inner_dim = self.llm.config.hidden_size + self.nllms - 1
+        outer_dim = 2048
         for i in range(self.nllms):
-            setattr(self, "outproj_{}".format(i+1), torch.nn.Linear(inner_dim, inner_dim))
-            setattr(self, "outlayer_{}".format(i+1), torch.nn.Linear(inner_dim, 1))
+            setattr(self, "outproj_{}".format(i+1), torch.nn.Linear(inner_dim, outer_dim))
+            setattr(self, "outlayer_{}".format(i+1), torch.nn.Linear(outer_dim, 1))
+        self.activation = torch.nn.ReLU()
         self.tokenizer = tokenizer
         self.regression = regression
 
     def forward(self, inputs, workers, labels):
-        workers = - torch.log(1 / workers - 1 + 1e-5)
         # worker_mask = torch.eye(self.nllms).unsqueeze(0).to(workers.device)
         # workers *= (1 - worker_mask)
         if self.regression == "mse":
-            labels = - torch.log(1 / labels - 1 + 1e-5)
+            workers = - torch.log(1 / (workers+1e-5) - 1 + 1e-3)
+            labels = - torch.log(1 / (labels+1e-5) - 1 + 1e-3)
         attention_mask = inputs["attention_mask"]
         outputs = self.llm(
             input_ids=inputs["input_ids"],
@@ -58,21 +60,18 @@ class WorkerPredictor(torch.nn.Module):
         pred_hidden = torch.cat([pred_hidden, workers], dim=-1)
         pred_hiddens = []
         for i in range(self.nllms):
-            each_pred = torch.relu(getattr(self, "outproj_{}".format(i+1))(pred_hidden[:, i]))
+            each_pred = self.activation(getattr(self, "outproj_{}".format(i+1))(pred_hidden[:, i]))
             each_pred = getattr(self, "outlayer_{}".format(i+1))(each_pred)
             pred_hiddens.append(each_pred)
         pred_hidden = torch.cat(pred_hiddens, dim=1)
-        if self.regression == "mse":
-            loss = ((pred_hidden - labels) ** 2).mean()
-        elif self.regression == "logistic":
+        if self.regression == "logistic":
             pred_hidden = torch.sigmoid(pred_hidden)
-            loss = - labels * torch.log(pred_hidden) - (1 - labels) * torch.log(1 - pred_hidden)
-            loss = loss.mean()
+        loss = ((pred_hidden - labels) ** 2).mean()
         return loss
 
     def predict(self, inputs, workers, aggregation="mean", expected_error=1):
         if self.regression == "mse":
-            workers = - torch.log(1 / workers - 1 + 1e-5)
+            workers = - torch.log(1 / (workers+1e-5) - 1 + 1e-3)
         all_workers = torch.cat([workers[:, 1, 0:1], workers[:, 0]], dim=-1)
         # worker_mask = torch.eye(self.nllms).unsqueeze(0).to(workers.device)
         # workers *= (1 - worker_mask)
@@ -91,7 +90,7 @@ class WorkerPredictor(torch.nn.Module):
 
         pred_hiddens = []
         for i in range(self.nllms):
-            each_pred = torch.relu(getattr(self, "outproj_{}".format(i+1))(pred_hidden[:, i]))
+            each_pred = self.activation(getattr(self, "outproj_{}".format(i+1))(pred_hidden[:, i]))
             each_pred = getattr(self, "outlayer_{}".format(i+1))(each_pred)
             pred_hiddens.append(each_pred)
         pred_hidden = torch.cat(pred_hiddens, dim=1)
@@ -104,12 +103,14 @@ class WorkerPredictor(torch.nn.Module):
             pred_hidden = pred_hidden.sum()
             pred_hidden.backward()
             grad = workers.grad.sum(dim=-1)
-            grad = grad / grad.sum(dim=-1, keepdim=True)
-            weight = (1 - grad) * expected_error
+            # grad = grad / grad.sum(dim=-1, keepdim=True)
+            weight = (1 - grad) # / expected_error
             # Normalise weight
             weight = torch.softmax(weight, dim=-1)
-            prediction = (all_workers * weight).sum(dim=-1)
-            prediction = prediction > 0 if self.regression != "logistic" else prediction > 0.5
+            pred_hidden = (all_workers * weight).sum(dim=-1)
+            prediction = pred_hidden > 0 if self.regression != "logistic" else pred_hidden > 0.5
         elif aggregation == "ex_error":
-            prediction = (pred_hidden - all_workers) ** 2
-        return prediction
+            # prediction = (pred_hidden - all_workers) ** 2
+            pred_hidden = torch.sigmoid(pred_hidden)
+            prediction = pred_hidden * (1 - pred_hidden)
+        return prediction, pred_hidden

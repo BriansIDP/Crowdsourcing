@@ -67,6 +67,7 @@ def test_crosscheck(crosscheckscore, refcheckscore, cov_crosscheck, caliberation
     n_systems = crosscheckscore.shape[1]
     print("="*89)
     print("SelfCheckGPT baseline: {:.5f}".format(pearsonr(refcheckscore, crosscheckscore[:, -1])[0]))
+    import pdb; pdb.set_trace()
     simple_ave = crosscheckscore.mean(axis=-1)
     print("Unweighted average Passage level: {:.5f}".format(pearsonr(refcheckscore, simple_ave)[0]))
     selfcheck = cov_crosscheck.diagonal(0, 1, 2).mean(axis=0) / caliberation

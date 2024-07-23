@@ -35,10 +35,13 @@ def main(args):
     ## Initialise data
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     llm_list = args.evidence_llm.split(',')
+    task = "halueval" if "halueval" in args.train_data_path else "crosscheck"
     traindata = WorkerDataset(
         args.train_data_path,
         tokenizer,
         evidence_llm=llm_list,
+        task=task,
+        split=args.split,
     )
     train_dataloader = DataLoader(
         traindata,
@@ -229,6 +232,12 @@ if __name__ == "__main__":
         type=str,
         default='mse',
         help="Regression method",
+    )
+    parser.add_argument(
+        "--split",
+        type=float,
+        default=1.0,
+        help="split train set size",
     )
     args = parser.parse_args()
     main(args)
