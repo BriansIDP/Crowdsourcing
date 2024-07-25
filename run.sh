@@ -1,1 +1,1 @@
-python EM.py --algorithm em_bimodal_biased
+python EM.py --algorithm em_gmixture

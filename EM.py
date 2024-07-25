@@ -59,16 +59,19 @@ def EM_Gmixture(data, sigma_bar=2, rho_bar=0, M=10000, p=0.5, mu_1_init=1, mu_2_
     Sigma_bar = np.identity(N) * sigma_bar + (np.ones((N, N)) - np.identity(N)) * rho_bar
     Sigma_hat_1 = Sigma_bar
     Sigma_hat_2 = Sigma_bar
-    epsilon = 1e-10
+    epsilon = 1e-8
     m = 0
     T = data.shape[0]
     q_1 = p * np.ones(T)
     q_2 = 1 - p * np.ones(T)
-    q_1_prev = 0 * np.ones(T)
+    # q_1_prev = 0 * np.ones(T)
     mu_1 = np.ones(N) * mu_1_init
     mu_2 = np.ones(N) * mu_2_init
-    while m < M and ((q_1 - q_1_prev) ** 2).mean() > epsilon:
+    mu_2_prev = 0 * mu_2
+    while m < M and np.max(np.abs((mu_2 - mu_2_prev))) > epsilon:
+        print(np.max(np.abs((mu_2 - mu_2_prev))))
         q_1_prev = q_1
+        mu_2_prev = mu_2
 
         # E-step
         det_Sigma_1 = np.linalg.det(Sigma_hat_1)
@@ -82,12 +85,14 @@ def EM_Gmixture(data, sigma_bar=2, rho_bar=0, M=10000, p=0.5, mu_1_init=1, mu_2_
         q_2 = 1 - q_1
 
         # M-step
-        Sigma_hat_1 = np.matmul((data - mu_1).transpose(), q_1[:, None] * (data - mu_1)) / q_1.sum()
-        Sigma_hat_2 = np.matmul((data - mu_2).transpose(), q_2[:, None] * (data - mu_2)) / q_2.sum()
         mu_1 = (q_1[:, None] * data).sum(axis=0) / q_1.sum()
         mu_2 = (q_2[:, None] * data).sum(axis=0) / q_2.sum()
+        Sigma_hat_1 = np.matmul((data - mu_1).transpose(), q_1[:, None] * (data - mu_1)) / q_1.sum()
+        Sigma_hat_2 = np.matmul((data - mu_2).transpose(), q_2[:, None] * (data - mu_2)) / q_2.sum()
+        m += 1
 
     # MLE assign
+    print("Done with {} steps".format(m))
     det_Sigma_1 = np.linalg.det(Sigma_hat_1)
     det_Sigma_2 = np.linalg.det(Sigma_hat_2)
     pos_debias = data - mu_1[None, :]
@@ -171,33 +176,33 @@ def EM_bimodal(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=
         Sigma_hat = Y_cov / T
         m += 1
     Z_hat = np.matmul(data - mu_bimodal[:, None], np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bimodal
-    # check how many signs of mean_vec and Z_hat are different
-    print("Mean and Z_hat sign difference: {}".format(((mean_vec >= 0) != (Z_hat >= 0)).sum()))
+    # # check how many signs of mean_vec and Z_hat are different
+    # print("Mean and Z_hat sign difference: {}".format(((mean_vec >= 0) != (Z_hat >= 0)).sum()))
     print("Done with {} steps".format(m))
     Sigma_hat_inv = np.linalg.inv(Sigma_hat)
-    v_hat = 1 / (v_bar + Sigma_hat_inv.sum())
+    v_hat = 1 / (1/v_bar + Sigma_hat_inv.sum())
 
     # Inference
-    # Z_hat_pos = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
-    # Z_hat_neg = np.matmul(data + mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar - mu_bar
-    # print("Positive:", Z_hat_pos)
-    # print("Negative:", Z_hat_neg)
-    # pos_mean_dev = data - Z_hat_pos[:, None]
-    # exp_pos = np.exp(-0.5 * np.sum(np.matmul(pos_mean_dev, np.linalg.inv(Sigma_hat)) * pos_mean_dev, axis=-1))
-    # neg_mean_dev = data - Z_hat_neg[:, None]
-    # exp_neg = np.exp(-0.5 * np.sum(np.matmul(neg_mean_dev, np.linalg.inv(Sigma_hat)) * neg_mean_dev, axis=-1))
-    # # pos_mask = exp_pos >= exp_neg
-    # # neg_mask = exp_pos < exp_neg
-    # q_pos = exp_pos / (exp_pos + exp_neg)
-    # q_neg = 1 - q_pos
-    # Z_hat = Z_hat_pos * q_pos + Z_hat_neg * q_neg
+    Z_hat_pos = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
+    Z_hat_neg = np.matmul(data + mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar - mu_bar
+    print("Positive:", Z_hat_pos)
+    print("Negative:", Z_hat_neg)
+    pos_mean_dev = data - Z_hat_pos[:, None]
+    exp_pos = np.exp(-0.5 * np.sum(np.matmul(pos_mean_dev, np.linalg.inv(Sigma_hat)) * pos_mean_dev, axis=-1))
+    neg_mean_dev = data - Z_hat_neg[:, None]
+    exp_neg = np.exp(-0.5 * np.sum(np.matmul(neg_mean_dev, np.linalg.inv(Sigma_hat)) * neg_mean_dev, axis=-1))
+    # pos_mask = exp_pos >= exp_neg
+    # neg_mask = exp_pos < exp_neg
+    q_pos = exp_pos / (exp_pos + exp_neg)
+    q_neg = 1 - q_pos
+    Z_hat = Z_hat_pos * q_pos + Z_hat_neg * q_neg
 
     # Mean assignment
-    mean_vec = data.mean(axis=-1)
-    pos_mask = mean_vec >= 0
-    neg_mask = mean_vec < 0
-    mu_bimodal = pos_mask * mu_bar - neg_mask * mu_bar
-    Z_hat = np.matmul(data - mu_bimodal[:, None], np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bimodal
+    # mean_vec = data.mean(axis=-1)
+    # pos_mask = mean_vec >= 0
+    # neg_mask = mean_vec < 0
+    # mu_bimodal = pos_mask * mu_bar - neg_mask * mu_bar
+    # Z_hat = np.matmul(data - mu_bimodal[:, None], np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bimodal
     print("Done with {} steps\tExpected error: {}".format(m, v_hat))
     # print("Precision Matrix")
     # print(np.linalg.inv(Sigma_hat))
@@ -277,8 +282,8 @@ def EM_bimodal_biased(
             Sigma_hat_pos = Sigma_hat
             Sigma_hat_neg = Sigma_hat
         else:
-            v_hat_pos = 1 / (v_bar + Sigma_hat_pos_inv.sum())
-            v_hat_neg = 1 / (v_bar + Sigma_hat_neg_inv.sum())
+            v_hat_pos = 1 / (1/v_bar + Sigma_hat_pos_inv.sum())
+            v_hat_neg = 1 / (1/v_bar + Sigma_hat_neg_inv.sum())
             Y_cov_pos = np.matmul((data-z_hat[:, None]-m_hat).transpose(), (data-z_hat[:, None] - m_hat) * pos_mask[:, None])
             Y_cov_pos += T * v_hat_pos * np.ones((N, N))
             Y_cov_neg = np.matmul((data-z_hat[:, None]-m_hat).transpose(), (data-z_hat[:, None] - m_hat) * neg_mask[:, None])
@@ -325,8 +330,8 @@ def EM_bimodal_biased(
 
 
 def main(args):
-    # model_list = ["llama3", "beluga", "mistral", "zephyr", "starling"]
-    model_list = ["beluga", "starling"]
+    model_list = ["llama3", "beluga", "mistral", "zephyr", "starling"]
+    # model_list = ["starling"]
     artificial = False
     v_bar_gen, mu_bar_gen = 1, 5
     if args.datapath == "artificial":
@@ -377,8 +382,8 @@ def main(args):
             c=0,
             M=10000,
             v_bar=v_bar_gen if artificial else 2,
-            mu_bar=mu_bar_gen if artificial else 5,
-            assign="gt",
+            mu_bar=mu_bar_gen if artificial else 3,
+            assign="likelihood",
             labels=labels,
         )
         print("Actual Estimation of Sigma:")
@@ -396,9 +401,9 @@ def main(args):
             rho_bar=0.0,
             c=0,
             M=10000,
-            v_bar=v_bar_gen if artificial else 2,
+            v_bar=v_bar_gen if artificial else 1,
             mu_bar=mu_bar_gen if artificial else 3,
-            assign="likelihood",
+            assign="mean",
             labels=labels,
             m_bar=0,
             tied=True,
@@ -414,12 +419,12 @@ def main(args):
     elif args.algorithm == "em_gmixture":
         pred, Sigma_hat_1, Sigma_hat_2, mu_1, mu_2 = EM_Gmixture(
             data,
-            sigma_bar=0.2,
+            sigma_bar=1,
             rho_bar=0,
-            M=10000,
+            M=100,
             p=0.5,
-            mu_1_init=5,
-            mu_2_init=-5,
+            mu_1_init=1,
+            mu_2_init=-1,
         )
         hits = (labels == pred).sum()
         print("Actual Estimation of Sigma class positive:")
