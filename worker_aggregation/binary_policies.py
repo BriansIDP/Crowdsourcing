@@ -6,6 +6,7 @@ from scipy.optimize import minimize
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from .utils import train_neural_net
 
 class EMSymmetricBinary:
     
@@ -274,7 +275,7 @@ class EMLogisticBinary:
 class EMNeuralNetBinary:
     def __init__(self, seed: int, 
                  n_features: int, num_workers: int,
-                 neural_net: object,
+                 neural_net_cons: object,
                  max_iter: int = 100, tol: float = 1e-6,
                  lr: float = 0.01, batch_size: int = 32,
                  wt_decay: float = 1e-4, epochs: int = 10):
@@ -286,7 +287,8 @@ class EMNeuralNetBinary:
         self.max_iter = max_iter
         self.tol = tol
         # nn and training params
-        self.neural_net = neural_net
+        self.neural_net_cons = neural_net_cons
+        self.neural_net = neural_net_cons()
         self.lr = lr
         self.batch_size = batch_size
         self.wt_decay = wt_decay
@@ -332,28 +334,40 @@ class EMNeuralNetBinary:
             print("Error")
             print(skill)
             raise
-        self.train_neural_net(features, prob_1)
+        # self.train_neural_net(features, prob_1)
+        num_samples = features.shape[0]
+        features_train = torch.tensor(features[:int(0.8*num_samples)]).float()
+        prob_1_train = torch.tensor(prob_1[:int(0.8*num_samples)]).float().unsqueeze(1)
+        features_val = torch.tensor(features[int(0.8*num_samples):]).float()
+        prob_1_val = torch.tensor(prob_1[int(0.8*num_samples):]).float().unsqueeze(1)
+        self.neural_net, stat_dict = train_neural_net(neural_net=self.neural_net,
+                                                      x_train=features_train,
+                                                      y_train=prob_1_train,
+                                                      x_val=features_val,
+                                                      y_val=prob_1_val,
+                                                      lr=self.lr, weight_decay=self.wt_decay,
+                                                      epochs=self.epochs)
         self.skill = skill
 
-    def train_neural_net(self, features: np.ndarray, prob_1: np.ndarray):
-        n_samples = features.shape[0]
-        optimizer = optim.Adam(self.neural_net.parameters(), 
-                               lr=self.lr, weight_decay=self.wt_decay)
-        criterion = nn.BCEWithLogitsLoss()
-        train_losses = []
-        features = torch.tensor(features.copy()).float()
-        for epoch in range(self.epochs):
-            self.neural_net.train()
-            for i in range(0, n_samples, self.batch_size):
-                batch_features = features[i:i+self.batch_size]
-                batch_prob_1 = prob_1[i:i+self.batch_size]
-                outputs = self.neural_net(batch_features)
-                loss = criterion(outputs, torch.tensor(batch_prob_1[:,None]).float())
-                train_losses.append(loss.item())
-            # Backward pass and optimization
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+    # def train_neural_net(self, features: np.ndarray, prob_1: np.ndarray):
+    #     n_samples = features.shape[0]
+    #     optimizer = optim.Adam(self.neural_net.parameters(), 
+    #                            lr=self.lr, weight_decay=self.wt_decay)
+    #     criterion = nn.BCEWithLogitsLoss()
+    #     train_losses = []
+    #     features = torch.tensor(features.copy()).float()
+    #     for epoch in range(self.epochs):
+    #         self.neural_net.train()
+    #         for i in range(0, n_samples, self.batch_size):
+    #             batch_features = features[i:i+self.batch_size]
+    #             batch_prob_1 = prob_1[i:i+self.batch_size]
+    #             outputs = self.neural_net(batch_features)
+    #             loss = criterion(outputs, torch.tensor(batch_prob_1[:,None]).float())
+    #             train_losses.append(loss.item())
+    #         # Backward pass and optimization
+    #         optimizer.zero_grad()
+    #         loss.backward()
+    #         optimizer.step()
 
     def fit(self, ests: np.ndarray, features: np.ndarray):
         num_samples = ests.shape[0]
@@ -382,6 +396,7 @@ class EMNeuralNetBinary:
         return labels
     
     def predict_w_features_only(self, features: np.ndarray):
-        prob_1 = sigmoid(self.neural_net(torch.tensor(features).float()).detach().numpy())
-        labels = np.array(prob_1 > 0.5, dtype=int)
+        # prob_1 = sigmoid(self.neural_net(torch.tensor(features).float()).detach().numpy())
+        # labels = np.array(prob_1 > 0.5, dtype=int)
+        labels = np.array(self.neural_net(torch.tensor(features).float()).detach().numpy() > 0, dtype=int)
         return labels
