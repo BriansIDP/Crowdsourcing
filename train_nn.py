@@ -42,6 +42,7 @@ def main(args):
         evidence_llm=llm_list,
         task=task,
         split=args.split,
+        mode=args.mode,
     )
     train_dataloader = DataLoader(
         traindata,
@@ -56,6 +57,7 @@ def main(args):
         len(llm_list),
         tokenizer,
         args.regression,
+        mode=args.mode,
     ).to(device)
 
     ## Optimiser
@@ -238,6 +240,12 @@ if __name__ == "__main__":
         type=float,
         default=1.0,
         help="split train set size",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default='pew',
+        help="Aggregation method",
     )
     args = parser.parse_args()
     main(args)

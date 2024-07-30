@@ -45,6 +45,7 @@ def main(args):
         evalmode=True,
         task=task,
         split=1.0, # train_args['split'] if 'split' in train_args else 1.0,
+        mode=train_args["mode"],
     )
     test_dataloader = DataLoader(
         testdata,
@@ -58,6 +59,7 @@ def main(args):
         len(llm_list),
         tokenizer,
         train_args["regression"],
+        mode=train_args["mode"],
     ).to(device)
     modelpath = os.path.join(args.model_path, args.model_ckpt, "pytorch_model.pt")
     trained_params = torch.load(modelpath)

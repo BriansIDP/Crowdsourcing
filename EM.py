@@ -70,7 +70,6 @@ def EM_Gmixture(data, sigma_bar=2, rho_bar=0, M=10000, p=0.5, mu_1_init=1, mu_2_
     mu_2 = np.ones(N) * mu_2_init
     mu_2_prev = 0 * mu_2
     while m < M and np.max(np.abs((mu_2 - mu_2_prev))) > epsilon:
-        print(np.max(np.abs((mu_2 - mu_2_prev))))
         q_1_prev = q_1
         mu_2_prev = mu_2
         # E-step
@@ -327,8 +326,8 @@ def EM_bimodal_biased(
 
 
 def main(args):
-    model_list = ["llama3", "beluga", "mistral", "zephyr", "starling"]
-    # model_list = ["starling"]
+    model_list = ["llama3", "beluga", "vicuna", "mistral", "zephyr", "starling", "openorca", "dolphin", "mistral1"]
+    # model_list = ["dolphin", "zephyr"]
     artificial = False
     v_bar_gen, mu_bar_gen = 1, 5
     if args.datapath == "artificial":
@@ -341,6 +340,7 @@ def main(args):
         labels = np.array(labels)
 
         # Direct averaging
+        data_tensor = np.minimum(0.9995, data_tensor)
         data = - np.log(1 / data_tensor[:, :, 0] - 1)
 
     data_mean = data.mean(axis=1)
@@ -371,16 +371,16 @@ def main(args):
         predicts = pred < 0.5
         hits = (labels == predicts).sum()
     elif args.algorithm == "em_bimodal":
-        pred, v_hat, weight, Sigma_hat = EM_bimodal(
+        pred, weight, Sigma_hat = EM_bimodal(
             data,
             len(model_list),
             sigma_bar=2,
             rho_bar=0.0,
             c=0,
             M=10000,
-            v_bar=v_bar_gen if artificial else 2,
-            mu_bar=mu_bar_gen if artificial else 3,
-            assign="likelihood",
+            v_bar=v_bar_gen if artificial else 5,
+            mu_bar=mu_bar_gen if artificial else 5,
+            assign="mean",
             labels=labels,
         )
         print("Actual Estimation of Sigma:")
@@ -399,7 +399,7 @@ def main(args):
             c=0,
             M=10000,
             v_bar=v_bar_gen if artificial else 1,
-            mu_bar=mu_bar_gen if artificial else 3,
+            mu_bar=mu_bar_gen if artificial else 5,
             assign="mean",
             labels=labels,
             m_bar=0,
