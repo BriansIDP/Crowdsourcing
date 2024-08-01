@@ -1,0 +1,4 @@
+name: TwoLayerMLP
+params:
+  seed: 69420
+  hidden_size: 20

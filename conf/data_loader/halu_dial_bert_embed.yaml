@@ -1,0 +1,4 @@
+name: "HaluDialBertEmbed"
+params:
+  filepath: "data/bert_embed.npz"
+  model_list: ["llama3","beluga","mistral","zephyr","starling"]

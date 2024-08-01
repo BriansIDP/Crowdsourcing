@@ -1,6 +1,7 @@
 defaults:
   - policy: em_sym_bin
   - data_loader: halu_dialogue_bin
+  - neural_net: two_layer_mlp
   - override hydra/launcher: joblib
   - _self_
 

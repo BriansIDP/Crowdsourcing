@@ -1,0 +1,7 @@
+name: "NeuralNetMajVote"
+needs_context: True
+params:
+  lr: 0.001
+  wt_decay: 0.0001
+  epochs: 1000
+  patience: 20

@@ -10,13 +10,13 @@ from worker_aggregation import EMAsymmetricBinary
 @pytest.fixture
 def synthetic_data_nn():
     def _generate_data(seed: int=0, num_samples: int=1000, num_workers: int=5, 
-                    num_features: int=10, hidden_size: int=10,
+                    context_len: int=10, hidden_size: int=10,
                     temp: float=1):
         rng = np.random.default_rng(seed)
         skill = rng.uniform(0.55, 0.8, size=(num_workers,2))
-        features = rng.normal(size=(num_samples, num_features))
-        true_nn = TwoLayerMLP(seed, num_features, hidden_size)
-        features_tensor = torch.tensor(features).float()
+        contexts = rng.normal(size=(num_samples, context_len))
+        true_nn = TwoLayerMLP(seed, context_len, hidden_size)
+        features_tensor = torch.tensor(contexts).float()
         outputs = true_nn(features_tensor).detach().numpy().flatten()
         outputs = (outputs - np.mean(outputs))/temp
         sigmoid = lambda x: 1/(1+np.exp(-x))
@@ -26,7 +26,7 @@ def synthetic_data_nn():
         flip = rng.random((num_samples, num_workers)) > skill.T[true_labels,:]
         flip = flip.astype(float)
         ests = true_labels[:,None]*1.0 + flip*(1.0-2*true_labels[:,None])
-        return {'ests':ests, 'true_labels':true_labels, 'skill':skill, 'features':features}
+        return {'ests':ests, 'true_labels':true_labels, 'skill':skill, 'contexts':contexts}
     return _generate_data
 
 class TestEMNNBinary:
@@ -41,13 +41,13 @@ class TestEMNNBinary:
                                 hidden_size=hidden_size, temp=temp)
         ests_train = data_dict['ests'][:train_size]
         ests_test = data_dict['ests'][train_size:]
-        features_train = data_dict['features'][:train_size]
-        features_test = data_dict['features'][train_size:]
+        features_train = data_dict['contexts'][:train_size]
+        features_test = data_dict['contexts'][train_size:]
         true_labels_train = data_dict['true_labels'][:train_size]
         true_labels_test = data_dict['true_labels'][train_size:]
         skill = data_dict['skill']
         num_workers = ests_train.shape[1]
-        num_features = features_train.shape[1]
+        context_len = features_train.shape[1]
 
         # class imbalance
         print("class imbalance: ", np.mean(true_labels_train), np.mean(true_labels_test))
@@ -55,12 +55,12 @@ class TestEMNNBinary:
         ## EM with neural net
         policy_seed = 42
         def neural_net_cons():
-            return TwoLayerMLP(policy_seed, num_features, 2*hidden_size)
+            return TwoLayerMLP(policy_seed, context_len, 2*hidden_size)
         lr = 1e-3
         batch_size = train_size
         wt_decay = 1e-4
         epochs = 100
-        em_model = EMNeuralNetBinary(seed=policy_seed, n_features=num_features, 
+        em_model = EMNeuralNetBinary(seed=policy_seed, context_len=context_len, 
                                     num_workers=num_workers, neural_net_cons=neural_net_cons, 
                                     lr=lr, batch_size=batch_size,
                                     wt_decay=wt_decay, epochs=epochs)
@@ -87,7 +87,7 @@ class TestEMNNBinary:
         print("train accuracies are: ", acc, acc2, acc3)
         assert acc >= acc2, "EMNeuralNetBinary should be at least as good as EMAsymmetricBinary"
         assert acc >= acc3, "EMNeuralNetBinary should be at least as good as MajorityVote"
-        print("train accuracy with features is better than without features")
+        print("train accuracy with contexts is better than without contexts")
 
         ## accuracy on test
         preds = em_model.predict(ests_test, features_test)
@@ -99,7 +99,7 @@ class TestEMNNBinary:
         print("test accuracies are: ", acc, acc2, acc3)
         assert acc >= acc2, "EMNeuralNetBinary should be at least as good as EMAsymmetricBinary"
         assert acc >= acc3, "EMNeuralNetBinary should be at least as good as MajorityVote"
-        print("test accuracy with features is better than without features")
+        print("test accuracy with contexts is better than without contexts")
 
     # def test_feature_only_perf(self, synthetic_data_nn):
     #     # generate data
@@ -112,25 +112,25 @@ class TestEMNNBinary:
     #                             hidden_size=hidden_size, temp=temp)
     #     ests_train = data_dict['ests'][:train_size]
     #     ests_test = data_dict['ests'][train_size:]
-    #     features_train = data_dict['features'][:train_size]
-    #     features_test = data_dict['features'][train_size:]
+    #     features_train = data_dict['contexts'][:train_size]
+    #     features_test = data_dict['contexts'][train_size:]
     #     true_labels_train = data_dict['true_labels'][:train_size]
     #     true_labels_test = data_dict['true_labels'][train_size:]
     #     skill = data_dict['skill']
     #     num_workers = ests_train.shape[1]
-    #     num_features = features_train.shape[1]
+    #     context_len = features_train.shape[1]
 
     #     # class imbalance
     #     print("class imbalance: ", np.mean(true_labels_train), np.mean(true_labels_test))
 
     #     ## EM with neural net
     #     policy_seed = 42
-    #     neural_net = TwoLayerMLP(policy_seed, num_features, 2*hidden_size)
+    #     neural_net = TwoLayerMLP(policy_seed, context_len, 2*hidden_size)
     #     lr = 1e-3
     #     batch_size = train_size
     #     wt_decay = 1e-4
     #     epochs = 10
-    #     em_model = EMNeuralNetBinary(seed=policy_seed, n_features=num_features, 
+    #     em_model = EMNeuralNetBinary(seed=policy_seed, context_len=context_len, 
     #                                 num_workers=num_workers, neural_net=neural_net, 
     #                                 lr=lr, batch_size=batch_size,
     #                                 wt_decay=wt_decay, epochs=epochs)
@@ -140,7 +140,7 @@ class TestEMNNBinary:
     #     print("skill of EMNeuralNetBinary matches true skill")
     #     # train a 2-layer MLP with majority vote predictions
     #     targets = MajorityVote(num_workers).predict(ests_train).reshape(-1,1)
-    #     maj_model = TwoLayerMLP(policy_seed, num_features, 2*hidden_size)
+    #     maj_model = TwoLayerMLP(policy_seed, context_len, 2*hidden_size)
     #     lr = 1e-3
     #     wt_decay = 1e-4
     #     epochs = 10

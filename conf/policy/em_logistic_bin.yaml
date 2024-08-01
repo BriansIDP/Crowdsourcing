@@ -1,0 +1,6 @@
+name: "EMLogisticBinary"
+needs_context: True
+params:
+  seed: ${seed}
+  tol: 1e-8
+  max_iter: 100

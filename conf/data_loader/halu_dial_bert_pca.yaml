@@ -1,0 +1,4 @@
+name: "HaluDialBertPCA"
+params:
+  filepath: "data/bert_embed_90p_pca.npz"
+  model_list: ["llama3","beluga","mistral","zephyr","starling"]
