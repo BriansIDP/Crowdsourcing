@@ -35,7 +35,13 @@ def get_policy(cfg, context_len=None):
         else:
             policy = policy_constructor(**cfg.policy.params, num_workers=num_workers)
     else:
-        policy = policy_constructor(**cfg.policy.params, num_workers=num_workers)
+        if cfg.policy.name == 'AvgSSLPreds':
+            neural_nets = [neural_net_constructor(input_size=num_workers-1, 
+                                    **cfg.neural_net.params) for _ in range(num_workers)]
+            policy = policy_constructor(**cfg.policy.params, num_workers=num_workers,
+                                        neural_nets=neural_nets, 
+                                        use_joblib_seeds=cfg.main.use_joblib_seeds)
+        else: policy = policy_constructor(**cfg.policy.params, num_workers=num_workers)
     return policy
 
 @hydra.main(version_base=None, config_path="./conf", config_name="config")
@@ -66,22 +72,6 @@ def main(cfg):
     # group_ests_mv = np.mean(ests, axis=1)>0.5
     accuracy = np.mean(group_ests == outcomes)
     print(f"Accuracy: {accuracy:.3f}")
-
-    stats_dict = policy.stats_dict
-    # plot losses
-    plt.plot(stats_dict['train_losses'], label='Train', color='blue')
-    plt.plot(stats_dict['val_losses'], label='Validation', color='red')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-    plt.show()
-    # plot accuracies
-    plt.plot(stats_dict['train_accs'], label='Train', color='blue')
-    plt.plot(stats_dict['val_accs'], label='Validation', color='red')
-    plt.xlabel('Epoch')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    plt.show()
 
     if cfg.data_loader.name in ["HaluDialBertPCA", "HaluDialBertEmbed"]:
         out = get_data_val(cfg)

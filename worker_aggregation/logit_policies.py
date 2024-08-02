@@ -3,9 +3,14 @@ from typing import Union
 import numpy as np
 import numpy.linalg as nl
 from tqdm import trange
+import torch
+import torch.nn as nn
+from joblib import Parallel, delayed
+from sklearn.preprocessing import StandardScaler
 
 from .utils import find_kl_gaussians
 from .utils import gaussian_log_likelihood
+from .utils import TwoLayerMLP, train_neural_net
 
 class EMGaussian:
 
@@ -199,3 +204,97 @@ class EM_GMM:
     def predict(self, ests: np.ndarray) -> np.ndarray:
         prob1 = self.do_e_step(ests)
         return np.array(prob1 > 0.5, dtype=np.int32)
+
+class AvgSSLPreds:
+    def __init__(self, 
+                 neural_nets: nn.Module,
+                 num_workers: int,
+                 loss_fn_type: str="bce_logit",
+                 lr: float=1e-3, 
+                 weight_decay: float=1e-5,
+                 patience: int=20,
+                 epochs: int=1000,
+                 use_joblib_fit: bool=False,
+                 use_joblib_seeds: bool=True,
+                 ) -> None:
+        self.neural_nets = neural_nets
+        self.num_workers = num_workers
+        assert len(self.neural_nets) == self.num_workers
+        self.loss_fn_type = loss_fn_type
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.patience = patience
+        self.epochs = epochs
+        if use_joblib_seeds:
+            assert not use_joblib_fit
+        self.use_joblib_fit = use_joblib_fit
+    
+    def fit(self, estimates: np.ndarray, testing=False) -> None:
+        # self.scaler = StandardScaler()
+        # estimates = self.scaler.fit_transform(estimates)
+        sigmoid = lambda x: 1/(1+np.exp(-x))
+        estimates = sigmoid(estimates)
+        estimates_train = estimates[:int(0.8*estimates.shape[0])]
+        estimates_val = estimates[int(0.8*estimates.shape[0]):]
+        results = []
+
+        def create_data_dict(idx, data, val_data):
+            other_ids = [j for j in range(estimates.shape[1]) if j != idx]
+            x_train = torch.tensor(data[:, other_ids], dtype=torch.float32)
+            x_val = torch.tensor(val_data[:, other_ids], dtype=torch.float32)
+            y_train = torch.tensor(data[:, idx], dtype=torch.float32).reshape(-1, 1)
+            y_val = torch.tensor(val_data[:, idx], dtype=torch.float32).reshape(-1, 1)
+            return {'x_train': x_train, 'y_train': y_train, 'x_val': x_val, 'y_val': y_val}
+            
+        if not self.use_joblib_fit:
+            for i in trange(estimates.shape[1]):
+                result = train_neural_net(**create_data_dict(i, estimates_train, estimates_val),
+                                          neural_net=self.neural_nets[i], loss_fn_type=self.loss_fn_type,
+                                          lr=self.lr, weight_decay=self.weight_decay, patience=self.patience,
+                                          epochs=self.epochs, testing=testing)
+                results.append(result)
+        else:
+            results = Parallel(n_jobs=-1)(
+                            delayed(train_neural_net)(
+                                **create_data_dict(i, estimates_train, estimates_val),
+                                neural_net=self.neural_nets[i],
+                                loss_fn_type=self.loss_fn_type,
+                                lr=self.lr,
+                                weight_decay=self.weight_decay,
+                                patience=self.patience,
+                                epochs=self.epochs,
+                                testing=testing
+                            ) for i in range(self.num_workers)
+                        )
+        self.models = []
+        self.stats_dict = {}
+        for i, (model, stats_dict_i) in enumerate(results):
+            self.models.append(model)
+            if i == 0:
+                for key in stats_dict_i:
+                    self.stats_dict[key] = [stats_dict_i[key]]
+            else:
+                for key in stats_dict_i:
+                    self.stats_dict[key].append(stats_dict_i[key])
+    
+    def predict(self, estimates: np.ndarray, testing=False) -> np.ndarray:
+        # estimates = self.scaler.transform(estimates)
+        sigmoid = lambda x: 1/(1+np.exp(-x))
+        estimates = sigmoid(estimates)
+        estimates_tensor = torch.tensor(estimates, dtype=torch.float32)
+        preds = np.zeros(estimates.shape)*np.nan
+        for i in range(estimates.shape[1]):
+            self.models[i].eval()
+            x_test = estimates_tensor[:, [j for j in range(estimates.shape[1]) if j != i]]
+            if self.loss_fn_type == "bce_logit":
+                preds[:,i] = torch.sigmoid(self.models[i](x_test)).detach().numpy().flatten()
+            elif self.loss_fn_type == "mse":
+                preds[:,i] = self.models[i](x_test).detach().numpy().flatten()
+            else:
+                raise ValueError(f"loss_fn_type={self.loss_fn_type} not recognized")
+        # preds = self.scaler.inverse_transform(preds)
+        group_ests = np.mean(preds, axis=1)
+        labels = np.array(group_ests > 0.5, dtype=np.int32)
+        if testing:
+            return labels, group_ests, preds
+        return labels

@@ -66,6 +66,30 @@ class HaluDialogueLogit:
             ests[:, i] = est_dict[model]
         return ests, outcomes
 
+class HaluDialogueProb:
+    def __init__(self, datapath, model_list):
+        self.datapath = datapath
+        self.model_list = model_list
+
+    def get_data(self):
+        est_dict = {}
+        for model in self.model_list:
+            hits = 0
+            est_dict[model] = []
+            outcomes = []
+            filepath = Path(self.datapath) / "halueval_dialogue_{}.json".format(model)
+            with open(filepath) as fin:
+                modeldata = json.load(fin)[model]
+            for datapiece in modeldata:
+                outcome = 0 if datapiece["ref"] == "yes" else 1
+                outcomes.append(outcome)
+                est = datapiece["prob"][1]
+                est_dict[model].append(est)
+        ests = np.zeros((len(outcomes), len(self.model_list)))
+        for i, model in enumerate(self.model_list):
+            ests[:, i] = est_dict[model]
+        return ests, outcomes
+
 class HaluQABinary:
     def __init__(self, datapath, model_list):
         self.datapath = datapath
