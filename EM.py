@@ -326,7 +326,7 @@ def EM_bimodal_biased(
 
 
 def main(args):
-    model_list = ["llama3", "beluga", "vicuna", "mistral", "zephyr", "starling", "openorca", "dolphin", "mistral1"]
+    model_list = ["llama3", "beluga", "mistral", "zephyr", "starling", "openorca", "dolphin", "mistral1", "hermes2", "hermes25"]
     # model_list = ["dolphin", "zephyr"]
     artificial = False
     v_bar_gen, mu_bar_gen = 1, 5
@@ -398,7 +398,7 @@ def main(args):
             rho_bar=0.0,
             c=0,
             M=10000,
-            v_bar=v_bar_gen if artificial else 1,
+            v_bar=v_bar_gen if artificial else 2,
             mu_bar=mu_bar_gen if artificial else 5,
             assign="mean",
             labels=labels,
