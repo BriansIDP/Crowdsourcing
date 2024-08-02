@@ -3,12 +3,13 @@ import json
 
 import numpy as np
 import numpy.linalg as nl
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 def main():
-    embeddings = np.load('dev/embeddings.npy')
+    # embeddings = np.load('dev/embeddings.npy')
+    embeddings = np.load('data/gpt2_embeddings.npy')
     path = Path('data/halueval_dialogue.json')
     with open(path) as fin:
         all_data = json.load(fin)
@@ -91,7 +92,7 @@ def main():
     context_val = embed_val
     context_test = embed_test
     # Save context, outcomes, and binary_ests in a single .npz file
-    np.savez('data/bert_embed.npz',
+    np.savez('data/gpt2_embed.npz',
             context_train=context_train,
             context_val=context_val,
             context_test=context_test,
