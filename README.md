@@ -33,12 +33,21 @@ Basic usage of EM original
 python train.py data_loader=halu_dialogue_logit policy=em_orig
 ```
 
-Train PEW using GPT-2:
+## Train PEW using GPT-2:
 ```
 ./train.sh
 ```
-Predict with PEW
+You need to specify `expdir` where the experimental data and model checkpoints will be stored. The first line in this file is to activate the conda environment. Please replace it with your own conda env.
+
+### To run with ground truth labels and GPT2
+Set the following parameters in `train.sh`:
+```
+--mode gt
+--split 0.5
+```
+Note that the `--split` determines the split between train and validation - 0.5 means 50% of data is used for training and 50% for validation. 
+
+### Inference with trained model
 ```
 ./eval.sh
 ```
-There are some local directories - please change to your local ones.
