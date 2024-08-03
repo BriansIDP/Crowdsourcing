@@ -33,8 +33,9 @@ class WorkerPredictor(torch.nn.Module):
             model_path,
             cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
         )
-        for name, param in self.llm.named_parameters():
-            param.requires_grad = False
+        if mode != "gt":
+            for name, param in self.llm.named_parameters():
+                param.requires_grad = False
         self.nllms = nllms
         self.mode = mode
         inner_dim = self.llm.config.hidden_size + self.nllms - 1
@@ -49,21 +50,23 @@ class WorkerPredictor(torch.nn.Module):
             self.pos_emb = torch.nn.Embedding(self.nllms, pos_emb_dim)
             encoder_layer = torch.nn.TransformerEncoderLayer(d_model=1+pos_emb_dim, nhead=1, batch_first=True)
             self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+            self.output_mean = torch.nn.Linear(1+pos_emb_dim, 1)
+            self.output_logdev = torch.nn.Linear(1+pos_emb_dim, 1)
+        elif self.mode == "gt":
+            self.output_layer = torch.nn.Linear(self.llm.config.hidden_size, 2)
         else:
             self.kproj = torch.nn.Linear(self.llm.config.hidden_size+1+pos_emb_dim, self.outer_dim)
             self.qproj = torch.nn.Linear(self.llm.config.hidden_size+1+pos_emb_dim, self.outer_dim)
             self.vproj = torch.nn.Linear(self.llm.config.hidden_size+1+pos_emb_dim, self.outer_dim)
             self.z_hat_proj = torch.nn.Linear(self.outer_dim, 1)
             self.pos_emb = torch.nn.Embedding(self.nllms, pos_emb_dim)
-            # self.z_hat_scale = torch.nn.Linear(outer_dim, self.nllms)
-            # self.noise_variance = torch.nn.Linear(outer_dim, self.nllms*self.nllms)
         self.activation = torch.nn.ReLU()
         self.drop = torch.nn.Dropout(0.1)
         self.tokenizer = tokenizer
         self.regression = regression
 
     def forward(self, inputs, workers, labels):
-        if self.regression == "mse":
+        if self.regression == "mse" and self.mode != "gt":
             workers = - torch.log(1 / (workers) - 1)
             labels = - torch.log(1 / (labels) - 1)
         attention_mask = inputs["attention_mask"]
@@ -87,13 +90,26 @@ class WorkerPredictor(torch.nn.Module):
             if self.regression == "logistic":
                 pred_hidden = torch.sigmoid(pred_hidden)
             loss = ((pred_hidden - labels) ** 2).mean()
-        if self.mode == "transformer":
+        elif self.mode == "transformer":
             # masking workers and get labels
-            workers_in = workers.unsqueeze(-1).repeat(1, 1, self.nllms)
+            workers_in = workers.unsqueeze(-1).repeat(1, self.nllms, 1)
             input_mask = 1 - torch.eye(self.nllms).unsqueeze(0).repeat(workers.size(0), 1, 1).to(workers.device)
-            workers_in = workers_in.view(-1, self.nllms)
-            input_mask = input_mask.view(-1, self.nllms)
-            enc_out = self.transformer_encoder(workers_in, mask=input_mask)
+            workers_in = workers_in.view(-1, self.nllms, 1)
+            # input_mask = input_mask.view(-1, self.nllms)
+
+            pos_inds = torch.tensor([i for i in range(self.nllms)]).to(workers.device)
+            pos_embs = self.pos_emb(pos_inds).unsqueeze(0).repeat(workers_in.size(0), 1, 1)
+            workers_in = torch.cat([workers_in, pos_embs], dim=-1)
+            enc_out = self.transformer_encoder(workers_in)
+            output_mean = self.output_mean(enc_out).squeeze(-1)
+            output_mean = torch.diagonal(output_mean.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
+            output_logdev = self.output_logdev(enc_out).squeeze(-1)
+            output_logdev = torch.diagonal(output_logdev.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
+            loss = output_logdev + 0.5 * (output_mean - labels) ** 2 / (torch.exp(output_logdev) ** 2)
+            loss = loss.mean()
+        elif self.mode == "gt":
+            prediction = torch.softmax(self.output_layer(pred_hidden), dim=-1)
+            loss = torch.nn.functional.cross_entropy(prediction, labels.view(-1))
         else:
             # Get inputs and masked inputs
             pred_hidden = pred_hidden.unsqueeze(1).repeat(1, self.nllms, 1)
@@ -120,22 +136,10 @@ class WorkerPredictor(torch.nn.Module):
             out_vecs = torch.einsum("bij,bjk->bik", weights, workers.unsqueeze(-1))
             loss = ((out_vecs.squeeze(-1) - labels) ** 2).mean()
 
-            # pred_hidden = self.activation(self.outproj(pred_hidden))
-            # z_hat_sign = self.z_hat_proj(pred_hidden)
-            # z_hat_scale = torch.sigmoid(self.z_hat_scale(pred_hidden)) * 10
-            # log_noise_std = self.noise_variance(pred_hidden).view(pred_hidden.size(0), self.nllms, self.nllms)
-            # noise_std = torch.exp(log_noise_std)
-            # noise_var = torch.einsum('bij,bjk->bik', noise_std.transpose(1, 2), noise_std) / math.sqrt(math.exp(self.nllms))
-            # z_hat_value = z_hat_sign * z_hat_scale
-            # # noise_var = torch.diag_embed(torch.exp(log_noise_var), offset=0, dim1=-2, dim2=-1)
-            # Y_unbiased = labels - z_hat_value
-            # noise_var_inv = torch.linalg.inv(noise_var)
-            # loss = torch.diag(torch.nn.functional.bilinear(Y_unbiased, Y_unbiased, noise_var_inv)) + torch.logdet(noise_var)
-            # loss = loss.mean()
         return loss
 
     def predict(self, inputs, workers, aggregation="mean", expected_error=1):
-        if self.regression == "mse":
+        if self.regression == "mse" and self.mode != "gt":
             workers = - torch.log(1 / (workers) - 1)
         # worker_mask = torch.eye(self.nllms).unsqueeze(0).to(workers.device)
         # workers *= (1 - worker_mask)
@@ -179,6 +183,22 @@ class WorkerPredictor(torch.nn.Module):
             elif aggregation == "ex_error":
                 pred_hidden = torch.sigmoid(pred_hidden)
                 prediction = pred_hidden * (1 - pred_hidden)
+        elif self.mode == "gt":
+            prediction = torch.softmax(self.output_layer(pred_hidden), dim=-1)
+        elif self.mode == "transformer":
+            # masking workers and get labels
+            workers_in = workers.unsqueeze(-1).repeat(1, self.nllms, 1)
+            input_mask = 1 - torch.eye(self.nllms).unsqueeze(0).repeat(workers.size(0), 1, 1).to(workers.device)
+            workers_in = workers_in.view(-1, self.nllms, 1)
+            # input_mask = input_mask.view(-1, self.nllms)
+
+            pos_inds = torch.tensor([i for i in range(self.nllms)]).to(workers.device)
+            pos_embs = self.pos_emb(pos_inds).unsqueeze(0).repeat(workers_in.size(0), 1, 1)
+            workers_in = torch.cat([workers_in, pos_embs], dim=-1)
+            enc_out = self.transformer_encoder(workers_in)
+            output = self.output_layer(enc_out).squeeze(-1)
+            output = torch.diagonal(output.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
+            prediction = output.mean(dim=-1) > 0
         else:
             pred_hidden = torch.cat([pred_hidden, workers], dim=-1)
             pred_hidden = self.activation(self.outproj(pred_hidden))

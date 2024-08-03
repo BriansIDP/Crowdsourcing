@@ -69,6 +69,9 @@ class WorkerDataset(Dataset):
                         labels.append(data['ref'])
                 else:
                     labels.append(max(0.0001, min(0.9999, data[llm][0])))
+        elif self.mode == "gt":
+            datasamples = [max(0.0001, min(0.9999, data[cllm][0])) for cllm in self.evidence_llm]
+            labels = [1 if data['ref'] == 'yes' else 0]
         else:
             datasamples = [max(0.0001, min(0.9999, data[cllm][0])) for cllm in self.evidence_llm]
             if self.evalmode:

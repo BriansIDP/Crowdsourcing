@@ -51,6 +51,21 @@ def main(args):
         collate_fn=collate_fn,
     )
 
+    validdata = WorkerDataset(
+        args.train_data_path,
+        tokenizer,
+        evidence_llm=llm_list,
+        task=task,
+        split=-args.split,
+        mode=args.mode,
+    )
+    valid_dataloader = DataLoader(
+        validdata,
+        batch_size=args.batch_size,
+        shuffle=False,
+        collate_fn=collate_fn,
+    )
+
     ## Initialise model
     model = WorkerPredictor(
         args.model_path,
@@ -98,7 +113,9 @@ def main(args):
             lr_scheduler,
             tokenizer,
         )
-        model.eval()
+        if args.split < 1.0:
+            model.eval()
+            eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer)
 
         current_lr = optimizer.param_groups[0]["lr"]
         save_checkpoint(model, tokenizer, args.outputdir, epoch)
@@ -137,6 +154,25 @@ def train_one_epoch(
             logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | loss: {loss} | time {elasped_time}", args.logfile)
 
     return model
+
+def eval_one_epoch(
+    args,
+    epoch,
+    model,
+    valid_dataloader,
+    tokenizer,
+):
+    hits = 0
+    total = 0
+    for i, batch in enumerate(valid_dataloader):
+        inputs, workers, labels = batch
+        pred, hidden = model.predict(
+            inputs,
+            workers,
+        )
+        hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
+        total += pred.size(0)
+    print("Accuracy: {:.2f}".format(hits/total))
 
 
 def save_checkpoint(model, tokenizer, outputdir, epoch):
