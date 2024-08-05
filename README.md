@@ -42,3 +42,13 @@ Predict with PEW
 ./eval.sh
 ```
 There are some local directories - please change to your local ones.
+
+AvgSSLPreds (with no contexts)
+Basic usage
+```
+python train.py data_loader=halu_dialogue_logit policy=avg_ssl_preds neural_net.params.hidden_size=100 neural_net.params.seed=0
+```
+Passing learning rate and weight decay
+```
+python train.py data_loader=halu_dialogue_logit policy=avg_ssl_preds policy.params.lr=0.001 policy.params.weight_decay=0.01 neural_net.params.hidden_size=100 neural_net.params.seed=0
+```
