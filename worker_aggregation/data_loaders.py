@@ -1,8 +1,13 @@
 import json
 from pathlib import Path
+from typing import Dict
 
 import numpy as np
 import torch
+from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
+from transformers import AutoTokenizer
+
 from .utils import TwoLayerMLP
 
 class HaluDialogueBinary:
@@ -13,7 +18,6 @@ class HaluDialogueBinary:
     def get_data(self):
         est_dict = {}
         for model in self.model_list:
-            hits = 0
             est_dict[model] = []
             outcomes = []
             filepath = Path(self.datapath) / "halueval_dialogue_{}.json".format(model)
@@ -22,14 +26,8 @@ class HaluDialogueBinary:
             for datapiece in modeldata:
                 outcome = 0 if datapiece["ref"] == "yes" else 1
                 outcomes.append(outcome)
-                # est_dict[model].append(datapiece["prob"])
                 est = np.argmax(datapiece["prob"])
                 est_dict[model].append(est)
-                # if datapiece["prob"][0] > datapiece["prob"][1] and outcome == 0:
-                #     hits += 1
-                # elif datapiece["prob"][1] > datapiece["prob"][0] and outcome == 1:
-                #     hits += 1
-            # print("{} Acc: {:.3f}".format(model, hits/len(est_dict[model])))
         ests = np.zeros((len(outcomes), len(self.model_list)))
         for i, model in enumerate(self.model_list):
             ests[:, i] = est_dict[model]
@@ -220,3 +218,53 @@ class SynLogisticData:
         if testing:
             return ests, features, outcomes, self.skill, self.theta
         return ests, features, outcomes
+
+
+class HaluDialBinaryLM(Dataset):
+    """Dataset for supervised fine-tuning."""
+
+    def __init__(
+        self,
+        data_path,
+        model_path,
+        evidence_llm=[],
+        evalmode=False,
+        split=0.5,
+        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    ):
+        super().__init__()
+        with open(data_path) as fin:
+            self.data = json.load(fin)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.evidence_llm = evidence_llm
+        self.evalmode = evalmode
+        self.device = device
+
+        if split < 1.0:
+            portion = int(len(self.data) * split)
+            if self.evalmode:
+                self.data = self.data[portion:] if portion > 0 else self.data[:portion]
+            else:
+                self.data = self.data[:portion] if portion > 0 else self.data[portion:]
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+        return self.preprocessing(self.data[idx])
+
+    def preprocessing(self, data):
+        ests = [data[cllm][0]>0.5 for cllm in self.evidence_llm]
+        outcomes = [1 if data['ref'] == 'yes' else 0]
+        input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
+        prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]
+        return prompt_inputs, torch.tensor(ests).float(), torch.tensor(outcomes)
+
+    def collate_fn(self, batch):
+        input_ids, ests, outcomes = zip(*batch)
+        input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(self.device)
+        attn_mask = input_ids != 0
+        inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
+        ests = torch.stack(ests).to(self.device)
+        outcomes = torch.stack(outcomes).to(self.device)
+        return inputs, ests, outcomes

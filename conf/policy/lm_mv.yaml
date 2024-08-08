@@ -1,0 +1,4 @@
+name: "LMMajVote"
+params:
+  model_path: "gpt2"
+  dropout_prob: 0.1

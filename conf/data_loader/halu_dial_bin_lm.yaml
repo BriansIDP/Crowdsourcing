@@ -1,0 +1,7 @@
+name: "HaluDialBinaryLM"
+params:
+  data_path: "data"
+  model_path: "gpt2"
+  evidence_llm: ["llama3","beluga","mistral","zephyr","starling"]
+  evalmode: False
+  split: 0.5
