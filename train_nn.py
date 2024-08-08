@@ -35,15 +35,34 @@ def main(args):
     ## Initialise data
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     llm_list = args.evidence_llm.split(',')
+    task = "halueval" if "halueval" in args.train_data_path else "crosscheck"
     traindata = WorkerDataset(
         args.train_data_path,
         tokenizer,
         evidence_llm=llm_list,
+        task=task,
+        split=args.split,
+        mode=args.mode,
     )
     train_dataloader = DataLoader(
         traindata,
         batch_size=args.batch_size,
         shuffle=True,
+        collate_fn=collate_fn,
+    )
+
+    validdata = WorkerDataset(
+        args.train_data_path,
+        tokenizer,
+        evidence_llm=llm_list,
+        task=task,
+        split=-args.split,
+        mode=args.mode,
+    )
+    valid_dataloader = DataLoader(
+        validdata,
+        batch_size=args.batch_size,
+        shuffle=False,
         collate_fn=collate_fn,
     )
 
@@ -53,6 +72,7 @@ def main(args):
         len(llm_list),
         tokenizer,
         args.regression,
+        mode=args.mode,
     ).to(device)
 
     ## Optimiser
@@ -93,7 +113,9 @@ def main(args):
             lr_scheduler,
             tokenizer,
         )
-        model.eval()
+        if args.split < 1.0:
+            model.eval()
+            eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer)
 
         current_lr = optimizer.param_groups[0]["lr"]
         save_checkpoint(model, tokenizer, args.outputdir, epoch)
@@ -132,6 +154,25 @@ def train_one_epoch(
             logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | loss: {loss} | time {elasped_time}", args.logfile)
 
     return model
+
+def eval_one_epoch(
+    args,
+    epoch,
+    model,
+    valid_dataloader,
+    tokenizer,
+):
+    hits = 0
+    total = 0
+    for i, batch in enumerate(valid_dataloader):
+        inputs, workers, labels = batch
+        pred, hidden = model.predict(
+            inputs,
+            workers,
+        )
+        hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
+        total += pred.size(0)
+    print("Accuracy: {:.2f}".format(hits/total))
 
 
 def save_checkpoint(model, tokenizer, outputdir, epoch):
@@ -229,6 +270,18 @@ if __name__ == "__main__":
         type=str,
         default='mse',
         help="Regression method",
+    )
+    parser.add_argument(
+        "--split",
+        type=float,
+        default=1.0,
+        help="split train set size",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default='pew',
+        help="Aggregation method",
     )
     args = parser.parse_args()
     main(args)
