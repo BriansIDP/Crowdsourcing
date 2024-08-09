@@ -1,6 +1,6 @@
 name: "HaluDialBinaryLM"
 params:
-  data_path: "data"
+  data_path: "data/halueval_dialogue.json"
   model_path: "gpt2"
   evidence_llm: ["llama3","beluga","mistral","zephyr","starling"]
   evalmode: False

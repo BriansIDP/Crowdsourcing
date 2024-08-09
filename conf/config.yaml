@@ -2,7 +2,7 @@ defaults:
   - policy: em_sym_bin
   - data_loader: halu_dialogue_bin
   - neural_net: two_layer_mlp
-  - override hydra/launcher: joblib
+  # - override hydra/launcher: joblib
   - _self_
 
 main:
@@ -11,11 +11,12 @@ main:
   use_joblib_seeds: False
 
 trainer:
-  batch_size: 8
+  batch_size: 16
   learning_rate: 1e-4
   gradient_accumulation_steps: 1
   num_train_epochs: 10
   num_warmup_steps: 0.03
   weight_decay: 0.0
   lr_scheduler_type: 'cosine'
-  model_dir: 'model'
+  model_dir: 'exp/lm_mv'
+  log_interval: 100
