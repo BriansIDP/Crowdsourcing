@@ -4,7 +4,7 @@ import pytest
 import numpy as np
 import numpy.linalg as nl
 
-from worker_aggregation import EMGaussian
+from worker_agg import EMGaussian
 
 def mse_based_on_weights(cov_true: np.ndarray, bias_true: np.ndarray, 
                          prior_var_of_outcomes: float,

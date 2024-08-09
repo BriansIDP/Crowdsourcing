@@ -86,7 +86,7 @@ class FinetuneLM:
                 lr: float=0.001, weight_decay: float=1e-5, 
                 gradient_accumulation_steps: int=1, num_warmup_steps: float=0.03,
                 num_train_epochs: int=10, lr_scheduler_type: str='cosine',
-                log_interval: int=100) -> None:
+                log_interval: int=100, patience: int=2) -> None:
         self.model = model
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
@@ -98,6 +98,7 @@ class FinetuneLM:
         self.num_train_epochs = num_train_epochs
         self.lr_scheduler_type = lr_scheduler_type
         self.log_interval = log_interval
+        self.patience = patience
         self.criterion = nn.BCEWithLogitsLoss()
     
     def logging(self, string: str, 
@@ -137,12 +138,28 @@ class FinetuneLM:
         )
 
         # Train loop
+        best_loss = float('inf')
+        best_epoch = 0
         for epoch in range(self.num_train_epochs):
             self.model.train()
             self.train_one_epoch(epoch,)
             # if args.split < 1.0:
             self.model.eval()
-            self.eval_one_epoch()
+            val_loss = self.eval_one_epoch()
+
+            # Early stopping
+            if val_loss < best_loss:
+                best_loss = val_loss
+                best_epoch = epoch
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+
+            if epochs_no_improve >= self.patience:
+                self.logging(f'Early stopping at epoch {epoch + 1}', 
+                            self.model_dir + '/train.log')
+                self.load_checkpoint(best_epoch)
+                break
 
             # current_lr = optimizer.param_groups[0]["lr"]
             self.save_checkpoint(epoch)
@@ -173,19 +190,35 @@ class FinetuneLM:
     def eval_one_epoch(self):
         hits = 0
         total = 0
+        total_loss = 0.0
         for i, batch in enumerate(self.val_dataloader):
             inputs, labels = batch
-            # preds = self.model.predict(
-            #     inputs,
-            #     labels,
-            # )
+            # forward pass
             logits = self.model(inputs)
+            # calculate loss
+            loss = self.criterion(logits, labels.float())
+            total_loss += loss.item() * inputs['input_ids'].size(0)
+            # prediction
             preds = (logits > 0).int()
             hits += sum(labels.view(-1) == preds.view(-1))
             total += preds.size(0)
         # print("Accuracy: {:.2f}".format(hits/total))
-        self.logging(f"Val acc local: {hits/total:.3f}", 
+        avg_loss = total_loss / total
+        acc = hits/total
+        self.logging(f"Val acc local: {acc:.3f}", 
                     self.model_dir + '/train.log')
+        self.logging(f"Val loss local: {avg_loss:.3f}", 
+                    self.model_dir + '/train.log')
+        return avg_loss
+    
+    def load_checkpoint(self, best_epoch):
+        fulloutput = os.path.join(self.model_dir, "checkpoint.{}".format(best_epoch))
+        # check if the model exists
+        if not os.path.exists(fulloutput):
+            raise ValueError(f"Model checkpoint {fulloutput} does not exist")
+        # pt_out = torch.load(f'{fulloutput}/pytorch_model.pt')
+        self.model.load_state_dict(torch.load(f'{fulloutput}/pytorch_model.pt'), strict=False)
+        self.model.tokenizer = AutoTokenizer.from_pretrained(fulloutput)
 
     def save_checkpoint(self, epoch):
         fulloutput = os.path.join(self.model_dir, "checkpoint.{}".format(epoch))

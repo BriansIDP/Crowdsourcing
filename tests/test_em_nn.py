@@ -1,11 +1,9 @@
 import pytest
 import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
 
-from worker_aggregation import TwoLayerMLP, EMNeuralNetBinary, MajorityVote
-from worker_aggregation import EMAsymmetricBinary
+from worker_agg import TwoLayerMLP, EMNeuralNetBinary, MajorityVote
+from worker_agg import EMAsymmetricBinary
 
 @pytest.fixture
 def synthetic_data_nn():

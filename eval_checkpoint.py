@@ -7,11 +7,11 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from worker_aggregation import LMplusOneLayer
-import worker_aggregation
+from worker_agg import LMplusOneLayer
+import worker_agg
 
 def get_data(cfg, split_type='train', with_gt=False):
-    data_constructor = worker_aggregation.__dict__[cfg.data_loader.name]
+    data_constructor = worker_agg.__dict__[cfg.data_loader.name]
     data_dict = OmegaConf.to_container(cfg.data_loader.params, resolve=True, throw_on_missing=True)
     if split_type == 'val':
         data_dict['evalmode'] = True

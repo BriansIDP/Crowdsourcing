@@ -2,22 +2,22 @@ import numpy as np
 # import matplotlib.pyplot as plt
 import hydra
 
-import worker_aggregation
+import worker_agg
 
 def get_data(cfg):
     print(cfg.data_loader.name)
-    data_constructor = worker_aggregation.__dict__[cfg.data_loader.name]
+    data_constructor = worker_agg.__dict__[cfg.data_loader.name]
     out = data_constructor(**cfg.data_loader.params).get_data()
     return out
 
 def get_data_val(cfg):
-    data_constructor = worker_aggregation.__dict__[cfg.data_loader.name]
+    data_constructor = worker_agg.__dict__[cfg.data_loader.name]
     out = data_constructor(**cfg.data_loader.params).get_data(split_type='val')
     return out
 
 def get_policy(cfg, context_len=None):
-    policy_constructor = worker_aggregation.__dict__[cfg.policy.name]
-    neural_net_constructor = worker_aggregation.__dict__[cfg.neural_net.name]
+    policy_constructor = worker_agg.__dict__[cfg.policy.name]
+    neural_net_constructor = worker_agg.__dict__[cfg.neural_net.name]
     num_workers = len(cfg.data_loader.params.model_list)
     if 'needs_context' in cfg.policy:
         if cfg.policy.needs_context:

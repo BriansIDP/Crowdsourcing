@@ -2,8 +2,8 @@ import pytest
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
-from worker_aggregation import EMLogisticBinary, EMAsymmetricBinary
-from worker_aggregation import MajorityVote
+from worker_agg import EMLogisticBinary, EMAsymmetricBinary
+from worker_agg import MajorityVote
 
 sigmoid = lambda x: 1/(1+np.exp(-x))
 
