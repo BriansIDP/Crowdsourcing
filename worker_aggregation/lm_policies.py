@@ -6,7 +6,7 @@ from .lm_utils import FinetuneLM
 
 class LMGroundTruth:
     def __init__(self, model,
-                 num_workers: int,
+                #  num_workers: int, 
                  model_dir: str,
                  lr: float=0.001,
                  weight_decay: float=1e-5, 
@@ -18,7 +18,7 @@ class LMGroundTruth:
                  batch_size: int=16,
                  ) -> None:
         self.model = model
-        self.num_workers = num_workers
+        # self.num_workers = num_workers
         self.model_dir = model_dir
         self.lr = lr
         self.weight_decay = weight_decay
@@ -28,6 +28,7 @@ class LMGroundTruth:
         self.lr_scheduler_type = lr_scheduler_type
         self.log_interval = log_interval
         self.batch_size = batch_size
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collate_fn(self, batch):
         input_ids, ests, outcomes = zip(*batch)
@@ -71,7 +72,7 @@ class LMGroundTruth:
 
 class LMMajVote:
     def __init__(self, model,
-                 num_workers: int,
+                #  num_workers: int,
                  model_dir: str,
                  lr: float=0.001,
                  weight_decay: float=1e-5, 
@@ -83,7 +84,7 @@ class LMMajVote:
                  batch_size: int=16,
                  ) -> None:
         self.model = model
-        self.num_workers = num_workers
+        # self.num_workers = num_workers
         self.model_dir = model_dir
         self.lr = lr
         self.weight_decay = weight_decay
@@ -93,6 +94,7 @@ class LMMajVote:
         self.lr_scheduler_type = lr_scheduler_type
         self.log_interval = log_interval
         self.batch_size = batch_size
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collate_fn(self, batch):
         input_ids, ests = zip(*batch)
@@ -101,6 +103,7 @@ class LMMajVote:
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
         # ests = torch.stack(ests).to(self.device)
         mv_labels = torch.mode(torch.stack(ests), dim=-1).values.long().to(self.device)
+        mv_labels = mv_labels[:, None]
         return inputs, mv_labels
 
     def fit(self, train_data, val_data):

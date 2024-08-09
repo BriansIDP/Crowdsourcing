@@ -9,13 +9,13 @@ import json
 from copy import deepcopy
 
 import numpy as np
-import six
+# import six
 import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 from transformers import AutoModelForSeq2SeqLM
-from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
-from peft import PeftConfig, PeftModel
+# from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
+# from peft import PeftConfig, PeftModel
 
 
 class WorkerPredictor(torch.nn.Module):
@@ -31,8 +31,10 @@ class WorkerPredictor(torch.nn.Module):
         super(WorkerPredictor, self).__init__()
         self.llm = AutoModelForCausalLM.from_pretrained(
             model_path,
-            cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
+            # cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
+            cache_dir="scratch/cache",  # Change to your local directory
         )
+        ### Does this freeze llm?
         if mode != "gt":
             for name, param in self.llm.named_parameters():
                 param.requires_grad = False
@@ -43,6 +45,7 @@ class WorkerPredictor(torch.nn.Module):
         self.outer_dim = self.inner_dim
         pos_emb_dim = 128
         if self.mode == "pew":
+            # add a hidden layer for each evidence llm
             for i in range(self.nllms):
                 setattr(self, "outproj_{}".format(i+1), torch.nn.Linear(self.inner_dim, self.outer_dim))
                 setattr(self, "outlayer_{}".format(i+1), torch.nn.Linear(self.outer_dim, 1))
@@ -66,6 +69,7 @@ class WorkerPredictor(torch.nn.Module):
         self.regression = regression
 
     def forward(self, inputs, workers, labels):
+        # taking logit of workers and labels
         if self.regression == "mse" and self.mode != "gt":
             workers = - torch.log(1 / (workers) - 1)
             labels = - torch.log(1 / (labels) - 1)

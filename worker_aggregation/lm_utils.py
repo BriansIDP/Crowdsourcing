@@ -26,15 +26,18 @@ class LMplusOneLayer(nn.Module):
         self.seed = seed
         self.dropout_prob = dropout_prob
 
-        # Load the pre-trained language model
+        # Determine device: use CUDA if available
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Load the pre-trained language model and move to the correct device
         self.llm = AutoModelForCausalLM.from_pretrained(
             model_path,
             cache_dir=cache_dir
-        )
+        ).to(self.device)
 
-        # Initialize additional layers
-        self.output_layer = nn.Linear(self.llm.config.hidden_size, 1)
-        self.activation = nn.ReLU()
+        # Initialize additional layers and move them to the correct device
+        self.output_layer = nn.Linear(self.llm.config.hidden_size, 1).to(self.device)
+        self.activation = nn.ReLU().to(self.device)
 
         # Initialize weights
         self._initialize_weights()
@@ -43,17 +46,23 @@ class LMplusOneLayer(nn.Module):
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     def _initialize_weights(self):
-        generator = torch.Generator()
+        generator = torch.Generator()  # Ensure generator is on the correct device
         generator.manual_seed(self.seed)
-        nn.init.kaiming_normal_(self.output_layer.weight, 
-                                nonlinearity='relu', generator=generator)
+        # Manually generate random numbers and apply kaiming initialization
+        with torch.no_grad():
+            fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
+            gain = nn.init.calculate_gain('relu')
+            std = gain / fan ** 0.5
+            self.output_layer.weight.data = torch.normal(0, std, size=self.output_layer.weight.shape, 
+                                                         generator=generator).to(self.device)       
         nn.init.zeros_(self.output_layer.bias)
 
     def forward(self, 
-                inputs: Dict[str, torch.Tensor], ):
-        attention_mask = inputs["attention_mask"]
+                inputs: Dict[str, torch.Tensor]):
+        # Ensure inputs are on the correct device
+        attention_mask = inputs["attention_mask"].to(self.device)
         outputs = self.llm(
-            input_ids=inputs["input_ids"],
+            input_ids=inputs["input_ids"].to(self.device),
             attention_mask=attention_mask,
             output_hidden_states=True,
             return_dict=True,
@@ -89,6 +98,7 @@ class FinetuneLM:
         self.num_train_epochs = num_train_epochs
         self.lr_scheduler_type = lr_scheduler_type
         self.log_interval = log_interval
+        self.criterion = nn.BCEWithLogitsLoss()
     
     def logging(self, string: str, 
                 logfilename: str, 
@@ -117,7 +127,7 @@ class FinetuneLM:
         # Scheduler and math around the number of training steps.
         num_update_steps_per_epoch = math.ceil(len(self.train_dataloader) / self.gradient_accumulation_steps)
         max_train_steps = self.num_train_epochs * num_update_steps_per_epoch
-        num_warmup_steps = num_warmup_steps * max_train_steps
+        num_warmup_steps = self.num_warmup_steps * max_train_steps
 
         self.lr_scheduler = get_scheduler(
             name=self.lr_scheduler_type,
@@ -143,10 +153,8 @@ class FinetuneLM:
         start = time.time()
         for i, batch in enumerate(self.train_dataloader):
             inputs, labels = batch
-            loss = self.model(
-                inputs,
-                labels,
-            )
+            logits = self.model(inputs)
+            loss = self.criterion(logits, labels.float())
             loss = loss / self.gradient_accumulation_steps
             loss.backward()
 
@@ -167,13 +175,17 @@ class FinetuneLM:
         total = 0
         for i, batch in enumerate(self.val_dataloader):
             inputs, labels = batch
-            preds = self.model.predict(
-                inputs,
-                labels,
-            )
+            # preds = self.model.predict(
+            #     inputs,
+            #     labels,
+            # )
+            logits = self.model(inputs)
+            preds = (logits > 0).int()
             hits += sum(labels.view(-1) == preds.view(-1))
             total += preds.size(0)
-        print("Accuracy: {:.2f}".format(hits/total))
+        # print("Accuracy: {:.2f}".format(hits/total))
+        self.logging(f"Val acc local: {hits/total:.3f}", 
+                    self.model_dir + '/train.log')
 
     def save_checkpoint(self, epoch):
         fulloutput = os.path.join(self.model_dir, "checkpoint.{}".format(epoch))

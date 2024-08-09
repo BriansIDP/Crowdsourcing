@@ -1,6 +1,6 @@
-name: "LMMajVote"
+name: "LMGroundTruth"
 params:
-  model_dir: 'exp/lm_mv'
+  model_dir: 'exp/lm_gt'
   lr: 1e-4
   weight_decay: 0.0
   gradient_accumulation_steps: 1

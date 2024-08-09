@@ -1,3 +1,7 @@
+import os
+from datetime import datetime
+import pytz
+
 import hydra
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
@@ -6,7 +10,7 @@ import worker_aggregation
 
 def get_data(cfg, split_type='train', with_gt=False):
     data_constructor = worker_aggregation.__dict__[cfg.data_loader.name]
-    data_dict = OmegaConf.to_container(cfg.data_gen.params, resolve=True, throw_on_missing=True)
+    data_dict = OmegaConf.to_container(cfg.data_loader.params, resolve=True, throw_on_missing=True)
     if split_type == 'val':
         data_dict['evalmode'] = True
     data_dict['with_gt'] = with_gt
@@ -15,15 +19,21 @@ def get_data(cfg, split_type='train', with_gt=False):
 
 def get_policy(cfg, ):
     policy_constructor = worker_aggregation.__dict__[cfg.policy.name]
-    policy = policy_constructor(**cfg.policy.params)
-    return policy
-
-def logging(s, logfile, logging_=True, log_=True):
-    if logging_:
-        print(s)
-    if log_:
-        with open(logfile, 'a+') as f_log:
-            f_log.write(s + '\n')
+    model_constructor = worker_aggregation.__dict__[cfg.neural_net.name]
+    now = datetime.now()
+    # Convert to Pacific Time
+    pacific_tz = pytz.timezone('US/Pacific')
+    pacific_time = now.astimezone(pacific_tz)
+    # Format the date-time string
+    dt_string = pacific_time.strftime("%Y-%m-%d_%H-%M-%S")
+    policy_dict = OmegaConf.to_container(cfg.policy.params, resolve=True, throw_on_missing=True)
+    policy_dict['model_dir'] = os.path.join(cfg.policy.params.model_dir, dt_string)
+    if os.path.exists(policy_dict['model_dir']):
+        raise ValueError(f"Directory {policy_dict['model_dir']} already exists")
+    os.makedirs(policy_dict['model_dir'])
+    model = model_constructor(**cfg.neural_net.params)
+    policy = policy_constructor(**policy_dict, model=model)
+    return policy, policy_dict['model_dir']
 
 def eval_policy(policy, dataloader):
     hits = 0
@@ -39,10 +49,11 @@ def eval_policy(policy, dataloader):
 
 @hydra.main(version_base=None, config_path="./conf", config_name="config")
 def main(cfg):
-    # with open(os.path.join(cfg.main.model_dir, 'model_config.json'), 'w') as f:
-    #     json.dump(args.__dict__, f, indent=2)
-    policy = get_policy(cfg)
-    if policy.name == 'LMGroundTruth':
+    policy, model_dir = get_policy(cfg)
+    # please dump the config file to the model_dir
+    with open(os.path.join(model_dir, 'model_config.yaml'), 'w') as f:
+        OmegaConf.save(cfg, f)
+    if cfg.policy.name == 'LMGroundTruth':
         train_data = get_data(cfg, split_type='train', with_gt=True)
         val_data = get_data(cfg, split_type='val', with_gt=True)
     else:
