@@ -230,7 +230,8 @@ class HaluDialBinaryLM(Dataset):
         evidence_llm=[],
         evalmode=False,
         split=0.5,
-        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        device = 'cuda:0' if torch.cuda.is_available() else 'cpu',
+        with_gt=False,
     ):
         super().__init__()
         with open(data_path) as fin:
@@ -246,6 +247,7 @@ class HaluDialBinaryLM(Dataset):
                 self.data = self.data[portion:] if portion > 0 else self.data[:portion]
             else:
                 self.data = self.data[:portion] if portion > 0 else self.data[portion:]
+        self.with_gt = with_gt
 
     def __len__(self):
         return len(self.data)
@@ -258,13 +260,22 @@ class HaluDialBinaryLM(Dataset):
         outcomes = [1 if data['ref'] == 'yes' else 0]
         input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
         prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]
-        return prompt_inputs, torch.tensor(ests).float(), torch.tensor(outcomes)
+        if self.with_gt:
+            return prompt_inputs, torch.tensor(ests).float(), torch.tensor(outcomes)
+        else:
+            return prompt_inputs, torch.tensor(ests).float()
 
     def collate_fn(self, batch):
-        input_ids, ests, outcomes = zip(*batch)
+        if self.with_gt:
+            input_ids, ests, outcomes = zip(*batch)
+            outcomes = torch.stack(outcomes).to(self.device)
+        else:
+            input_ids, ests = zip(*batch)
         input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(self.device)
         attn_mask = input_ids != 0
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
         ests = torch.stack(ests).to(self.device)
-        outcomes = torch.stack(outcomes).to(self.device)
-        return inputs, ests, outcomes
+        if self.with_gt:
+            return inputs, ests, outcomes
+        else:
+            return inputs, ests

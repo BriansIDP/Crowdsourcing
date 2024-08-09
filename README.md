@@ -18,19 +18,19 @@ Run on binary data:
 ```
 pip install -r requirements.txt
 pip install -e .
-python train.py policy=em_sym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
-python train.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
-python train.py policy=majority_vote data_loader=halu_dialogue_bin
+python main.py policy=em_sym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
+python main.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
+python main.py policy=majority_vote data_loader=halu_dialogue_bin
 ```
 
 Basic usage of EM with Gaussian mixture model (GMM):
 ```
-python train.py data_loader=halu_dialogue_logit policy=em_gmm
+python main.py data_loader=halu_dialogue_logit policy=em_gmm policy.params.max_iter=200
 ```
 
 Basic usage of EM original
 ```
-python train.py data_loader=halu_dialogue_logit policy=em_orig
+python main.py data_loader=halu_dialogue_logit policy=em_orig policy.params.prior_var_of_cov=10
 ```
 
 ## Train PEW using GPT-2:
