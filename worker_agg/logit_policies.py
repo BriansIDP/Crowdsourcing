@@ -216,6 +216,7 @@ class AvgSSLPreds:
                  epochs: int=1000,
                  use_joblib_fit: bool=False,
                  use_joblib_seeds: bool=True,
+                 logits: bool=True
                  ) -> None:
         self.neural_nets = neural_nets
         self.num_workers = num_workers
@@ -228,12 +229,14 @@ class AvgSSLPreds:
         if use_joblib_seeds:
             assert not use_joblib_fit
         self.use_joblib_fit = use_joblib_fit
+        self.logits = logits
     
     def fit(self, estimates: np.ndarray, testing=False) -> None:
         # self.scaler = StandardScaler()
         # estimates = self.scaler.fit_transform(estimates)
-        sigmoid = lambda x: 1/(1+np.exp(-x))
-        estimates = sigmoid(estimates)
+        if self.logits:
+            sigmoid = lambda x: 1/(1+np.exp(-x))
+            estimates = sigmoid(estimates)
         estimates_train = estimates[:int(0.8*estimates.shape[0])]
         estimates_val = estimates[int(0.8*estimates.shape[0]):]
         results = []
@@ -279,8 +282,9 @@ class AvgSSLPreds:
     
     def predict(self, estimates: np.ndarray, testing=False) -> np.ndarray:
         # estimates = self.scaler.transform(estimates)
-        sigmoid = lambda x: 1/(1+np.exp(-x))
-        estimates = sigmoid(estimates)
+        if self.logits:
+            sigmoid = lambda x: 1/(1+np.exp(-x))
+            estimates = sigmoid(estimates)
         estimates_tensor = torch.tensor(estimates, dtype=torch.float32)
         preds = np.zeros(estimates.shape)*np.nan
         for i in range(estimates.shape[1]):

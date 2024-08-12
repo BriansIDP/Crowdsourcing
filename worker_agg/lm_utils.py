@@ -18,7 +18,8 @@ class LMplusOneLayer(nn.Module):
         model_path: str,
         seed: int,
         dropout_prob: float = 0.1,
-        cache_dir: str = "scratch/cache"
+        cache_dir: str = "scratch/cache",
+        freeze: bool = False,
     ):
         super(LMplusOneLayer, self).__init__()
         
@@ -34,6 +35,10 @@ class LMplusOneLayer(nn.Module):
             model_path,
             cache_dir=cache_dir
         ).to(self.device)
+        self.freeze = freeze
+        if freeze:
+            for name, param in self.llm.named_parameters():
+                param.requires_grad = False
 
         # Initialize additional layers and move them to the correct device
         self.output_layer = nn.Linear(self.llm.config.hidden_size, 1).to(self.device)
