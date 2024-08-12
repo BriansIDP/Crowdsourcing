@@ -19,7 +19,7 @@ class LMplusOneLayer(nn.Module):
         seed: int,
         dropout_prob: float = 0.1,
         cache_dir: str = "scratch/cache",
-        freeze: bool = False,
+        freeze_lm: bool = False,
     ):
         super(LMplusOneLayer, self).__init__()
         
@@ -35,8 +35,8 @@ class LMplusOneLayer(nn.Module):
             model_path,
             cache_dir=cache_dir
         ).to(self.device)
-        self.freeze = freeze
-        if freeze:
+        self.freeze_lm = freeze_lm
+        if freeze_lm:
             for name, param in self.llm.named_parameters():
                 param.requires_grad = False
 
