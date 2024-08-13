@@ -110,9 +110,9 @@ class WorkerPredictor(torch.nn.Module):
             normalised_weight = torch.softmax(self.outlayer.weight, -1)
             pred_hidden = (pred_hidden.unsqueeze(1) * normalised_weight.unsqueeze(0)).sum(dim=-1)
             if self.regression == "skill":
-                loss = ((pred_hidden.view(-1) - labels.view(-1)) ** 2).mean()
-                # loss = - labels * torch.log(pred_hidden) - (1 - labels) * torch.log(1 - pred_hidden)
-                # loss = loss.mean()
+                # loss = ((pred_hidden.view(-1) - labels.view(-1)) ** 2).mean()
+                loss = - labels * torch.log(pred_hidden) - (1 - labels) * torch.log(1 - pred_hidden)
+                loss = loss.mean()
             else:
                 pred_hidden = torch.log(torch.cat([pred_hidden.unsqueeze(-1), 1-pred_hidden.unsqueeze(-1)], dim=-1))
                 loss = torch.nn.functional.cross_entropy(pred_hidden.view(pred_hidden.size(0)*self.nllms, 2), labels.view(-1))
@@ -240,6 +240,7 @@ class WorkerPredictor(torch.nn.Module):
             # prediction = torch.sigmoid(pred_hidden)
             # pred_hidden = self.outlayer(prediction).view(prediction.size(0)*self.nllms, 1)
             normalised_weight = torch.softmax(self.outlayer.weight.data, dim=-1)
+<<<<<<< HEAD
             pred_hidden = (prediction.unsqueeze(1) * normalised_weight.unsqueeze(0)).sum(dim=-1).mean(dim=1).view(-1, 1)
             pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
 
@@ -253,6 +254,22 @@ class WorkerPredictor(torch.nn.Module):
             denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
             prediction = (numerator < denominator).float().unsqueeze(-1)
             prediction = torch.cat([1-prediction, prediction], dim=-1)
+=======
+            pred_hidden = (prediction.unsqueeze(1) * normalised_weight.unsqueeze(0)).sum(dim=-1).view(-1, 1)
+            pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
+            # prediction = 1 - pred_hidden
+
+            # EM E-step
+            # sigma = prediction[:, 0]
+            # p_r_0 = normalised_weight[:, 0]
+            # p_r_1 = 1 - normalised_weight[:, 1]
+            # numerator = torch.log(p_r_0).unsqueeze(0) * (1 - labels) + torch.log(1 - p_r_0) * labels
+            # numerator = sigma * torch.exp(numerator.sum(dim=-1))
+            # denominator = torch.log(p_r_1).unsqueeze(0) * labels + torch.log(1 - p_r_1) * (1 - labels)
+            # denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
+            # prediction = (numerator < denominator).float().unsqueeze(-1)
+            # prediction = torch.cat([1-prediction, prediction], dim=-1)
+>>>>>>> ce8547a (Crowdlayer implementation)
         elif self.mode == "gt":
             pred_hidden = torch.cat([pred_hidden, workers], dim=-1)
             prediction = torch.softmax(self.output_layer(pred_hidden), dim=-1)

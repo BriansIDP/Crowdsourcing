@@ -4,7 +4,7 @@ trainfile="data/halueval_dialogue.json"
 # trainfile="data/artificial.json"
 # trainfile="data/wikibio_crosscheck_gpt3.json"
 # expdir="exp/crosscheck_pew_gpt2_logistic_relu"
-expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_constrained_mse
+expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_constrained
 # expdir=exp/transformer_gpt2_mse_artificial
 mkdir -p $expdir
 
