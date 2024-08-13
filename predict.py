@@ -37,6 +37,7 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(train_args["model_path"])
     llm_list = train_args["evidence_llm"].split(',')
     task = "halueval" if "halueval" in args.testfile else "crosscheck"
+    task = "artificial" if "artificial" in args.testfile else task
 
     testdata = WorkerDataset(
         args.testfile,
@@ -45,7 +46,7 @@ def main(args):
         evalmode=True,
         task=task,
         split=1.0, # train_args['split'] if 'split' in train_args else 1.0,
-        mode=train_args["mode"],
+        mode=train_args["mode"] if train_args["mode"] != "pewcrowd" else "gt",
     )
     test_dataloader = DataLoader(
         testdata,
@@ -72,33 +73,49 @@ def main(args):
     predictions = []
     all_errors = []
     all_labels = []
-    if args.aggregation == "grad":
-        with torch.no_grad():
-            for i, batch in enumerate(tqdm(test_dataloader)):
-                inputs, workers, labels = batch
-                prediction, probs = model.predict(
-                    inputs,
-                    workers,
-                    aggregation="ex_error",
-                )
-                all_errors.append(prediction)
-            all_errors = torch.cat(all_errors, dim=0)
-            all_errors = all_errors.mean(dim=0)
+    # if args.aggregation == "grad":
+    #     with torch.no_grad():
+    #         for i, batch in enumerate(tqdm(test_dataloader)):
+    #             inputs, workers, labels = batch
+    #             prediction, probs = model.predict(
+    #                 inputs,
+    #                 workers,
+    #                 aggregation="ex_error",
+    #             )
+    #             all_errors.append(prediction)
+    #         all_errors = torch.cat(all_errors, dim=0)
+    #         all_errors = all_errors.mean(dim=0)
+    all_sigmas = []
     for i, batch in enumerate(tqdm(test_dataloader)):
         inputs, workers, labels = batch
-        prediction, probs = model.predict(
-            inputs,
-            workers,
-            aggregation=args.aggregation,
-            expected_error=all_errors,
-        )
-        total_hits += (prediction == labels[:, 0]).sum()
-        total_samples += prediction.size(0)
-        if task == "halueval":
-            predictions.extend(prediction.tolist())
-        elif task == "crosscheck":
-            predictions.extend(probs.tolist())
-        all_labels.extend(labels[:, 0].tolist())
+        if task == "artificial":
+            for worker in workers:
+                prediction = model.density_estimtion(
+                    inputs,
+                    worker.unsqueeze(0),
+                )
+                all_sigmas.append(prediction)
+        else:
+            prediction, probs = model.predict(
+                inputs,
+                workers,
+                aggregation=args.aggregation,
+                expected_error=all_errors,
+                labels=(workers < 0.5).float(),
+            )
+            if train_args["mode"] in ["gt", "pewcrowd"]:
+                prediction = prediction[:, 0] > 0.5 if train_args["mode"] == "pewcrowd" else prediction[:, 0] < 0.5
+                total_hits += (prediction == labels[:, 0]).sum()
+            else:
+                total_hits += (prediction == labels[:, 0]).sum()
+            total_samples += prediction.size(0)
+            if task == "halueval":
+                predictions.extend(prediction.tolist())
+            elif task == "crosscheck":
+                predictions.extend(probs.tolist())
+            all_labels.extend(labels[:, 0].tolist())
+    # all_sigmas = np.array(all_sigmas)
+    # import pdb; pdb.set_trace()
     if task == "halueval":
         print("Accuracy: {:.5f}".format(total_hits / total_samples))
     elif task == "crosscheck":

@@ -19,6 +19,10 @@ from dataloader import WorkerDataset, collate_fn
 from torch.utils.data import DataLoader
 
 
+torch.manual_seed(3407)
+random.seed(3407)
+
+
 def logging(s, logfile, logging_=True, log_=True):
     if logging_:
         print(s)
@@ -56,8 +60,9 @@ def main(args):
         tokenizer,
         evidence_llm=llm_list,
         task=task,
-        split=-args.split,
+        split=args.split,
         mode=args.mode,
+        evalmode=True,
     )
     valid_dataloader = DataLoader(
         validdata,
@@ -133,6 +138,8 @@ def train_one_epoch(
     optimizer.zero_grad()
     trainsize = len(train_dataloader)
     start = time.time()
+    total_loss = 0
+    total_count = 0
     for i, batch in enumerate(train_dataloader):
         inputs, workers, labels = batch
         loss = model(
@@ -140,6 +147,8 @@ def train_one_epoch(
             workers,
             labels,
         )
+        total_loss += loss.item()
+        total_count += 1
         loss = loss / args.gradient_accumulation_steps
         loss.backward()
 
@@ -150,8 +159,9 @@ def train_one_epoch(
             optimizer.zero_grad()
         if (i + 1) % args.log_interval == 0:
             elasped_time = time.time() - start
-            loss = loss.item() * args.gradient_accumulation_steps
-            logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | loss: {loss} | time {elasped_time}", args.logfile)
+            # loss = loss.item() * args.gradient_accumulation_steps
+            loss_print = total_loss / total_count
+            logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | loss: {loss_print} | time {elasped_time}", args.logfile)
 
     return model
 
@@ -164,15 +174,28 @@ def eval_one_epoch(
 ):
     hits = 0
     total = 0
-    for i, batch in enumerate(valid_dataloader):
+    group_hits = 0
+    group_total = 0
+    for batch in tqdm(valid_dataloader):
         inputs, workers, labels = batch
         pred, hidden = model.predict(
             inputs,
             workers,
+            labels=labels < 0.5,
         )
-        hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
+        if args.mode == "pewcrowd":
+            group_labels = labels > 0.5
+            group_hits += (group_labels.view(-1) == hidden.max(dim=-1)[1]).sum()
+            group_total += group_labels.view(-1).size(0)
+            labels = ((labels < 0.5).sum(dim=-1) > labels.size(-1) // 2).long()
+        if len(pred.size()) > 1:
+            hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
+        else:
+            hits += (labels[:, 0] == pred).sum()
         total += pred.size(0)
-    print("Accuracy: {:.2f}".format(hits/total))
+    if args.mode == "pewcrowd":
+        logging("Group Accuracy: {:.5f}".format(group_hits/group_total), args.logfile)
+    logging("Accuracy: {:.5f}".format(hits/total), args.logfile)
 
 
 def save_checkpoint(model, tokenizer, outputdir, epoch):
