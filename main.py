@@ -57,7 +57,13 @@ def main(cfg):
         if 'needs_context' in cfg.policy:
             if cfg.policy.needs_context:
                 policy = get_policy(cfg, contexts.shape[1])
-                policy.fit(contexts=contexts, ests=ests)
+                if 'ground_truth' in cfg.policy:
+                    if cfg.policy.ground_truth:
+                        policy.fit(contexts=contexts, ests=ests, outcomes=outcomes)
+                    else:
+                        policy.fit(contexts=contexts, ests=ests)
+                else:
+                    policy.fit(contexts=contexts, ests=ests)
                 group_ests = policy.predict(contexts=contexts, ests=ests)
             else:
                 policy = get_policy(cfg)
@@ -73,7 +79,7 @@ def main(cfg):
     accuracy = np.mean(group_ests == outcomes)
     print(f"Accuracy: {accuracy:.3f}")
 
-    if cfg.data_loader.name in ["HaluDialBertPCA", "HaluDialBertEmbed"]:
+    if cfg.data_loader.name in ["HaluDialBertPCA", "HaluDialEmbed"]:
         out = get_data_val(cfg)
         if len(out) == 2:
             ests, outcomes = out

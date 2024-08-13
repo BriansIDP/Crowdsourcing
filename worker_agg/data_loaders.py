@@ -143,7 +143,7 @@ class HaluDialBertPCA:
         assert ests.shape[1] == self.num_workers
         return context, ests, outcomes
 
-class HaluDialBertEmbed:
+class HaluDialEmbed:
     def __init__(self, filepath, model_list):
         assert Path(filepath).exists()
         self.all_data = np.load(filepath)

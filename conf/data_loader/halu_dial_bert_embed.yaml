@@ -1,4 +1,4 @@
-name: "HaluDialBertEmbed"
+name: "HaluDialEmbed"
 params:
-  filepath: "data/bert_embed.npz"
+  filepath: "data/gpt2_embeddings.npy"
   model_list: ["llama3","beluga","mistral","zephyr","starling"]

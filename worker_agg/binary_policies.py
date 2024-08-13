@@ -414,6 +414,7 @@ class NeuralNetMajVote:
                  wt_decay: float=1e-4,
                  epochs: int=1000,
                  patience: int=20,
+                 ground_truth: bool=False
                  ) -> None:
         self.num_workers = num_workers
         self.context_len = context_len
@@ -422,8 +423,12 @@ class NeuralNetMajVote:
         self.wt_decay = wt_decay
         self.epochs = epochs
         self.patience = patience
+        self.ground_truth = ground_truth
 
-    def fit(self, contexts: np.ndarray, ests: np.ndarray):
+    def fit(self, contexts: np.ndarray, ests: np.ndarray,
+            outcomes: np.ndarray=None) -> None:
+        if self.ground_truth:
+            assert outcomes is not None
         assert ests.shape[1] == self.num_workers
         assert contexts.shape[1] == self.context_len
         self.scaler = StandardScaler()
@@ -431,8 +436,11 @@ class NeuralNetMajVote:
         print("number of training samples: ", contexts.shape[0])
         print(np.median(np.abs(np.mean(contexts, axis=0))))
         print(np.median(np.std(contexts, axis=0)))
-        # apply majority vote to get labels
-        targets = MajorityVote(ests.shape[1]).predict(ests).reshape(-1,1)
+        if not self.ground_truth:
+            # apply majority vote to get labels
+            targets = MajorityVote(ests.shape[1]).predict(ests).reshape(-1,1)
+        else:
+            targets = outcomes.reshape(-1,1)
         print("frequency of 1s in targets: ", np.mean(targets))
         targets_train_ten = torch.tensor(targets).float()[:int(0.8*contexts.shape[0])]
         targets_val_ten = torch.tensor(targets).float()[int(0.8*contexts.shape[0]):]

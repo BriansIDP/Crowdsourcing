@@ -64,6 +64,8 @@ def main(cfg):
     # tokenizer = AutoTokenizer.from_pretrained(model_path)
 
     all_embeddings = []
+    all_ests = []
+    all_outcomes = []
     for split_type in ['train', 'val']:
         print(f"Processing {split_type} data")
         data = get_data(cfg, split_type=split_type, with_gt=True)
@@ -87,11 +89,21 @@ def main(cfg):
             pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
             # Convert the embeddings to numpy and append to list
             all_embeddings.append(pred_hidden.cpu().detach().numpy())
+            all_ests.append(ests.cpu().detach().numpy())
+            all_outcomes.append(outcomes.cpu().detach().numpy())
 
     # Concatenate all embeddings along the first dimension (batch size)
     all_embeddings = np.concatenate(all_embeddings, axis=0)
     print("shape of all_embeddings:", all_embeddings.shape)
-    np.save('data/gpt2_embeddings.npy', all_embeddings)
+    all_ests = np.concatenate(all_ests, axis=0)
+    print("shape of all_ests:", all_ests.shape)
+    all_outcomes = np.concatenate(all_outcomes, axis=0)
+    all_outcomes = all_outcomes.flatten()
+    print("shape of all_outcomes:", all_outcomes.shape)
+    # npz file
+    np.savez('data/gpt2_embeddings.npz', 
+             embeddings=all_embeddings, ests=all_ests, outcomes=all_outcomes)
+    # np.save('data/gpt2_embeddings.npy', all_embeddings)
 
 if __name__ == '__main__':
     main()
