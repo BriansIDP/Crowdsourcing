@@ -33,9 +33,6 @@ class WorkerPredictor(torch.nn.Module):
             model_path,
             cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
         )
-        # if mode != "gt":
-        #     for name, param in self.llm.named_parameters():
-        #         param.requires_grad = False
         self.nllms = nllms
         self.mode = mode
         inner_dim = self.llm.config.hidden_size + self.nllms - 1
@@ -72,6 +69,14 @@ class WorkerPredictor(torch.nn.Module):
         self.drop = torch.nn.Dropout(0.1)
         self.tokenizer = tokenizer
         self.regression = regression
+
+    def freeze_model(self):
+        for name, param in self.llm.named_parameters():
+            param.requires_grad = False
+
+    def unfreeze_model(self):
+        for name, param in self.llm.named_parameters():
+            param.requires_grad = True
 
     def forward(self, inputs, workers, labels):
         if self.regression == "mse" and self.mode not in ["gt", "pewcrowd"]:
@@ -240,21 +245,6 @@ class WorkerPredictor(torch.nn.Module):
             # prediction = torch.sigmoid(pred_hidden)
             # pred_hidden = self.outlayer(prediction).view(prediction.size(0)*self.nllms, 1)
             normalised_weight = torch.softmax(self.outlayer.weight.data, dim=-1)
-<<<<<<< HEAD
-            pred_hidden = (prediction.unsqueeze(1) * normalised_weight.unsqueeze(0)).sum(dim=-1).mean(dim=1).view(-1, 1)
-            pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
-
-            # EM
-            sigma = prediction[:, 0]
-            p_r_0 = normalised_weight[:, 0]
-            p_r_1 = 1 - normalised_weight[:, 1]
-            numerator = torch.log(p_r_0).unsqueeze(0) * (1 - labels) + torch.log(1 - p_r_0) * labels
-            numerator = sigma * torch.exp(numerator.sum(dim=-1))
-            denominator = torch.log(p_r_1).unsqueeze(0) * labels + torch.log(1 - p_r_1) * (1 - labels)
-            denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
-            prediction = (numerator < denominator).float().unsqueeze(-1)
-            prediction = torch.cat([1-prediction, prediction], dim=-1)
-=======
             pred_hidden = (prediction.unsqueeze(1) * normalised_weight.unsqueeze(0)).sum(dim=-1).view(-1, 1)
             pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
             # prediction = 1 - pred_hidden
@@ -269,7 +259,6 @@ class WorkerPredictor(torch.nn.Module):
             # denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
             # prediction = (numerator < denominator).float().unsqueeze(-1)
             # prediction = torch.cat([1-prediction, prediction], dim=-1)
->>>>>>> ce8547a (Crowdlayer implementation)
         elif self.mode == "gt":
             pred_hidden = torch.cat([pred_hidden, workers], dim=-1)
             prediction = torch.softmax(self.output_layer(pred_hidden), dim=-1)

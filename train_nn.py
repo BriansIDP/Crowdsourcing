@@ -109,6 +109,8 @@ def main(args):
     # Train loop
     for epoch in range(args.num_train_epochs):
         model.train()
+        # if epoch > 1 and args.mode == "pewcrowd":
+        #     model.freeze_model()
         model = train_one_epoch(
             args,
             epoch,
@@ -123,6 +125,8 @@ def main(args):
             eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer)
 
         current_lr = optimizer.param_groups[0]["lr"]
+        # if epoch > 1 and args.mode == "pewcrowd":
+        #     model.unfreeze_model()
         save_checkpoint(model, tokenizer, args.outputdir, epoch)
 
 
