@@ -47,8 +47,12 @@ def main(cfg):
         model_path="gpt2",
         seed=69420,
     )
-    model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_mv/2024-08-08_21-05-40"
-    epoch = 2
+    # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_21-29-32"
+    # epoch = 4
+    # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_15-45-21"
+    # epoch = 2
+    model_dir = cfg.policy.params.model_dir
+    epoch = cfg.eval.epoch
     load_checkpoint(model, model_dir, epoch)
     for split_type in ['train', 'val']:
         data = get_data(cfg, split_type=split_type, with_gt=True)

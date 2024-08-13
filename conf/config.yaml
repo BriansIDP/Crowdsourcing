@@ -9,3 +9,6 @@ main:
   seed_split: 42069
   data_split: 'train'
   use_joblib_seeds: False
+
+eval:
+  epoch: ${main.eval.epoch}

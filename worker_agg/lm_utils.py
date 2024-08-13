@@ -169,14 +169,14 @@ class FinetuneLM:
             else:
                 epochs_no_improve += 1
 
+            # current_lr = optimizer.param_groups[0]["lr"]
+            self.save_checkpoint(epoch)
+
             if epochs_no_improve >= self.patience:
-                self.logging(f'Early stopping at epoch {epoch + 1}', 
+                self.logging(f'Early stopping at epoch {epoch}', 
                             self.model_dir + '/train.log')
                 self.load_checkpoint(best_epoch)
                 break
-
-            # current_lr = optimizer.param_groups[0]["lr"]
-            self.save_checkpoint(epoch)
 
     def train_one_epoch(self, epoch,):
         self.optimizer.zero_grad()

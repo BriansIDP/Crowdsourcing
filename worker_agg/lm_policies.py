@@ -66,7 +66,7 @@ class LMGroundTruth:
         finetuner.run()
 
     def predict(self, inputs, ests):
-        logits = self.model.predict(inputs,)
+        logits = self.model(inputs,)
         preds = (logits>0).int().detach()
         return preds
 
@@ -133,6 +133,6 @@ class LMMajVote:
         finetuner.run()
 
     def predict(self, inputs, ests):
-        logits = self.model.predict(inputs,)
+        logits = self.model(inputs,)
         preds = (logits>0).int().detach()
         return preds
