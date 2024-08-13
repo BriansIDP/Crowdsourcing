@@ -144,29 +144,37 @@ class HaluDialBertPCA:
         return context, ests, outcomes
 
 class HaluDialEmbed:
-    def __init__(self, filepath, model_list):
+    def __init__(self, filepath, model_list, 
+                 seed: int):
         assert Path(filepath).exists()
         self.all_data = np.load(filepath)
         self.num_workers = len(model_list)
+        self.rng = np.random.default_rng(seed)
 
-    def get_data(self, split_type='train'):
+    def get_data(self, split=0.5, split_type='train',
+                 shuffle=False):
+        contexts = self.all_data['embeddings']
+        ests = self.all_data['ests']
+        outcomes = self.all_data['outcomes']
+        total_samples = contexts.shape[0]
         if split_type == 'train':
-            context = self.all_data['context_train']
-            ests = self.all_data['ests_train']
-            outcomes = self.all_data['outcomes_train']
+            contexts = contexts[:int(split*total_samples)]
+            ests = ests[:int(split*total_samples)]
+            outcomes = outcomes[:int(split*total_samples)]
         elif split_type == 'val':
-            context = self.all_data['context_val']
-            ests = self.all_data['ests_val']
-            outcomes = self.all_data['outcomes_val']
-        elif split_type == 'test':
-            context = self.all_data['context_test']
-            ests = self.all_data['ests_test']
-            outcomes = self.all_data['outcomes_test']
+            contexts = contexts[int(split*total_samples):]
+            ests = ests[int(split*total_samples):]
+            outcomes = outcomes[int(split*total_samples):]
         else:
             raise ValueError("Invalid split type")
-        assert context.shape[0] == ests.shape[0]
+        assert contexts.shape[0] == ests.shape[0]
         assert ests.shape[1] == self.num_workers
-        return context, ests, outcomes
+        if shuffle:
+            shuffleidx = self.rng.permutation(contexts.shape[0])
+            contexts = contexts[shuffleidx]
+            ests = ests[shuffleidx]
+            outcomes = outcomes[shuffleidx]
+        return contexts, ests, outcomes
 
 class SynTwoLayerMLPData:
     def __init__(self, seed: int, num_features: int, 

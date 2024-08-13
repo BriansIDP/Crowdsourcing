@@ -1,4 +1,0 @@
-name: "HaluDialEmbed"
-params:
-  filepath: "data/gpt2_embeddings.npy"
-  model_list: ["llama3","beluga","mistral","zephyr","starling"]

@@ -4,10 +4,14 @@ import hydra
 
 import worker_agg
 
-def get_data(cfg):
+def get_data(cfg, split_type='train', split=0.5, shuffle=True):
     print(cfg.data_loader.name)
     data_constructor = worker_agg.__dict__[cfg.data_loader.name]
-    out = data_constructor(**cfg.data_loader.params).get_data()
+    if cfg.data_loader.name == 'HaluDialEmbed':
+        out = data_constructor(**cfg.data_loader.params).get_data(split_type=split_type, 
+                                                                  split=split, shuffle=shuffle)
+    else:
+        out = data_constructor(**cfg.data_loader.params).get_data(split_type)
     return out
 
 def get_data_val(cfg):
@@ -57,8 +61,8 @@ def main(cfg):
         if 'needs_context' in cfg.policy:
             if cfg.policy.needs_context:
                 policy = get_policy(cfg, contexts.shape[1])
-                if 'ground_truth' in cfg.policy:
-                    if cfg.policy.ground_truth:
+                if 'ground_truth' in cfg.policy.params:
+                    if cfg.policy.params.ground_truth:
                         policy.fit(contexts=contexts, ests=ests, outcomes=outcomes)
                     else:
                         policy.fit(contexts=contexts, ests=ests)

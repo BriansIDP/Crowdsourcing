@@ -19,7 +19,8 @@ class LMplusOneLayer(nn.Module):
         seed: int,
         dropout_prob: float = 0.1,
         cache_dir: str = "scratch/cache",
-        freeze_lm: bool = False,
+        no_freeze_lm: bool = True,
+        n_unfreeze: int = 0,
     ):
         super(LMplusOneLayer, self).__init__()
         
@@ -35,14 +36,22 @@ class LMplusOneLayer(nn.Module):
             model_path,
             cache_dir=cache_dir
         ).to(self.device)
-        self.freeze_lm = freeze_lm
-        if freeze_lm:
+        self.no_freeze_lm = no_freeze_lm
+        self.n_unfreeze = n_unfreeze
+        if not no_freeze_lm:
             for name, param in self.llm.named_parameters():
                 param.requires_grad = False
+            # Unfreeze the last n layers of GPT-2
+            for layer in self.llm.transformer.h[-n_unfreeze:]:
+                for param in layer.parameters():
+                    param.requires_grad = True
+        else:
+            # no freezing
+            pass
 
         # Initialize additional layers and move them to the correct device
         self.output_layer = nn.Linear(self.llm.config.hidden_size, 1).to(self.device)
-        self.activation = nn.ReLU().to(self.device)
+        # self.activation = nn.ReLU().to(self.device)
 
         # Initialize weights
         self._initialize_weights()
@@ -196,6 +205,7 @@ class FinetuneLM:
         hits = 0
         total = 0
         total_loss = 0.0
+        start = time.time()
         for i, batch in enumerate(self.val_dataloader):
             inputs, labels = batch
             # forward pass
@@ -207,12 +217,15 @@ class FinetuneLM:
             preds = (logits > 0).int()
             hits += sum(labels.view(-1) == preds.view(-1))
             total += preds.size(0)
+        elapsed_time = time.time() - start
         # print("Accuracy: {:.2f}".format(hits/total))
         avg_loss = total_loss / total
         acc = hits/total
         self.logging(f"Val acc local: {acc:.3f}", 
                     self.model_dir + '/train.log')
         self.logging(f"Val loss local: {avg_loss:.3f}", 
+                    self.model_dir + '/train.log')
+        self.logging(f"Time taken: {elapsed_time:.3f}",
                     self.model_dir + '/train.log')
         return avg_loss
     
