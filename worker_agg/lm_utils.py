@@ -268,6 +268,7 @@ class CrowdLayerNN(nn.Module):
         cache_dir: str = "scratch/cache",
         no_freeze_lm: bool = True,
         n_unfreeze: int = 0,
+        hidden_size: int = 100,
     ):
         super(CrowdLayerNN, self).__init__()
         
@@ -298,7 +299,10 @@ class CrowdLayerNN(nn.Module):
             pass
 
         # Initialize additional layers and move them to the correct device
-        self.output_layer = nn.Linear(self.llm.config.hidden_size, 2).to(self.device)
+        self.hidden_size = hidden_size
+        self.hidden_layer = nn.Linear(self.llm.config.hidden_size, self.hidden_size).to(self.device)
+        self.activation = nn.ReLU().to(self.device)
+        self.output_layer = nn.Linear(hidden_size, 2).to(self.device)
         
         # Crowd layer
         for i in range(self.num_workers):
@@ -314,6 +318,13 @@ class CrowdLayerNN(nn.Module):
         generator = torch.Generator()  # Ensure generator is on the correct device
         generator.manual_seed(self.seed)
         # Manually generate random numbers and apply kaiming initialization
+        with torch.no_grad():
+            fan = nn.init._calculate_correct_fan(self.hidden_layer.weight, 'fan_in')
+            gain = nn.init.calculate_gain('relu')
+            std = gain / fan ** 0.5
+            self.hidden_layer.weight.data = torch.normal(0, std, size=self.hidden_layer.weight.shape, 
+                                                         generator=generator).to(self.device)
+        nn.init.zeros_(self.hidden_layer.bias)
         with torch.no_grad():
             fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
             gain = nn.init.calculate_gain('relu')
@@ -347,6 +358,8 @@ class CrowdLayerNN(nn.Module):
             dropout_mask = (torch.rand(pred_hidden.shape, generator=generator) > self.dropout_prob).float().to(pred_hidden.device)
             pred_hidden = pred_hidden * dropout_mask / (1 - self.dropout_prob)
 
+        pred_hidden = self.hidden_layer(pred_hidden)
+        pred_hidden = self.activation(pred_hidden)
         pred_hidden = self.output_layer(pred_hidden)
         # apply softmax
         pred_hidden = torch.softmax(pred_hidden, dim=-1)
