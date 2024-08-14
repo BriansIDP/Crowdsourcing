@@ -29,6 +29,7 @@ class WorkerDataset(Dataset):
         task="halueval",
         split=1.0,
         mode="pew",
+        template="",
     ):
         super(WorkerDataset, self).__init__()
         with open(data_path) as fin:
@@ -38,13 +39,15 @@ class WorkerDataset(Dataset):
         self.evalmode = evalmode
         self.task = task
         self.mode = mode
+        self.template = template
 
-        if split < 1.0:
-            portion = int(len(self.data) * split)
+        if split < 0.9:
+            start = int(len(self.data) * split)
+            end = int(len(self.data) * (split + 0.1))
             if self.evalmode:
-                self.data = self.data[portion:] if portion > 0 else self.data[:portion]
+                self.data = self.data[start:end]
             else:
-                self.data = self.data[:portion] if portion > 0 else self.data[portion:]
+                self.data = self.data[:start] + self.data[end:]
 
     def __len__(self):
         return len(self.data)
@@ -55,14 +58,14 @@ class WorkerDataset(Dataset):
     def preprocessing(self, data):
         datasamples = []
         labels = []
-        if self.mode == "pew":
+        if self.mode == "pew" or "pewcrowd" in self.mode:
             for llm in self.evidence_llm:
                 datasample = []
                 for cllm in self.evidence_llm:
                     if cllm != llm:
                         datasample.append(max(0.0001, min(0.9999, data[cllm][0])))
                 datasamples.append(datasample)
-                if self.evalmode:
+                if self.evalmode and self.mode == "pew":
                     if self.task == "halueval":
                         labels.append(1 if data['ref'] == 'yes' else 0)
                     elif self.task == "crosscheck":
@@ -82,6 +85,8 @@ class WorkerDataset(Dataset):
             input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
         elif self.task == "crosscheck":
             input_str = "Passage: {}\nIs there any non-factual or hallucinated information in the passage?".format(data["query"])
+        else:
+            input_str = "N/A"
         prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]
         return prompt_inputs, torch.tensor(datasamples), torch.tensor(labels)
 

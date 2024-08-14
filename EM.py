@@ -52,6 +52,13 @@ def get_artificial_data(mu_bar, sigma_bar, mean_1, mean_2, cov_1, cov_2, N):
     delta_neg = np.random.multivariate_normal(mean_1, cov_1, total//2)
     delta = np.concatenate([delta_pos, delta_neg], axis=0)
     Y = Z[:, None] + delta
+
+    pred = Y.sum(axis=-1) < 0
+    hits = (labels == pred).sum()
+    weights = np.linalg.inv(cov_1).sum(axis=-1)
+    import pdb; pdb.set_trace()
+    print(hits / pred.shape[0])
+    exit()
     return Y, labels, Z
 
 
@@ -329,9 +336,15 @@ def main(args):
     # model_list = ["llama3", "beluga", "mistral", "zephyr", "starling", "openorca", "dolphin", "mistral1", "hermes2", "hermes25"]
     model_list = ["llama3", "beluga", "mistral", "zephyr", "starling"]
     artificial = False
-    v_bar_gen, mu_bar_gen = 1, 5
+    v_bar_gen, mu_bar_gen = 2, 2
+    mean_1 = np.array([1, 2, 1])
+    mean_2 = np.array([-2, -2, -1])
+    cov_1 = np.array([[5, 2, 2], [2, 3, 1], [2, 1, 3]])
+    # cov_1 = np.matmul(cov_1, cov_1.T)
+    print(cov_1)
+    cov_2 = cov_1
     if args.datapath == "artificial":
-        data, labels, z_t = get_artificial_data(mu_bar_gen, v_bar_gen, 10000, 5)
+        data, labels, z_t = get_artificial_data(mu_bar_gen, v_bar_gen, mean_1, mean_2, cov_1, cov_2, 10000)
         artificial = True
         np.save("outputs/gt.npy", z_t)
     else:
