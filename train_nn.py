@@ -72,12 +72,19 @@ def main(args):
     )
 
     ## Initialise model
+    lora_config = {}
+    lora_config["lora_rank"] = args.lora_rank
+    lora_config["lora_alpha"] = args.lora_alpha,
+    lora_config["lora_dropout"] = args.lora_dropout,
+    lora_config["lora_module"] = args.lora_module,
+
     model = WorkerPredictor(
         args.model_path,
         len(llm_list),
         tokenizer,
         args.regression,
         mode=args.mode,
+        lora_config=lora_config,
     ).to(device)
 
     ## Optimiser
@@ -109,8 +116,8 @@ def main(args):
     # Train loop
     for epoch in range(args.num_train_epochs):
         model.train()
-        # if epoch > 1 and args.mode == "pewcrowd":
-        #     model.freeze_model()
+        if epoch > args.freeze_epoch and "pewcrowd" in args.mode:
+            model.freeze_model()
         model = train_one_epoch(
             args,
             epoch,
@@ -125,8 +132,8 @@ def main(args):
             eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer)
 
         current_lr = optimizer.param_groups[0]["lr"]
-        # if epoch > 1 and args.mode == "pewcrowd":
-        #     model.unfreeze_model()
+        if epoch > args.freeze_epoch and "pewcrowd" in args.mode:
+            model.unfreeze_model()
         save_checkpoint(model, tokenizer, args.outputdir, epoch)
 
 
@@ -187,7 +194,7 @@ def eval_one_epoch(
             workers,
             labels=labels < 0.5,
         )
-        if args.mode == "pewcrowd":
+        if "pewcrowd" in args.mode:
             group_labels = labels > 0.5
             group_hits += (group_labels.view(-1) == hidden.max(dim=-1)[1]).sum()
             group_total += group_labels.view(-1).size(0)
@@ -197,7 +204,7 @@ def eval_one_epoch(
         else:
             hits += (labels[:, 0] == pred).sum()
         total += pred.size(0)
-    if args.mode == "pewcrowd":
+    if "pewcrowd" in args.mode:
         logging("Group Accuracy: {:.5f}".format(group_hits/group_total), args.logfile)
     logging("Accuracy: {:.5f}".format(hits/total), args.logfile)
 
@@ -309,6 +316,36 @@ if __name__ == "__main__":
         type=str,
         default='pew',
         help="Aggregation method",
+    )
+    parser.add_argument(
+        "--freeze_epoch",
+        type=int,
+        default=100,
+        help="Number of epochs after which the llm is frozen",
+    )
+    parser.add_argument(
+        "--lora_rank",
+        type=int,
+        default=8,
+        help="LoRA rank",
+    )
+    parser.add_argument(
+        "--lora_alpha",
+        type=int,
+        default=32,
+        help="LoRA alpha",
+    )
+    parser.add_argument(
+        "--lora_dropout",
+        type=float,
+        default=0.1,
+        help="LoRA dropout",
+    )
+    parser.add_argument(
+        "--lora_module",
+        type=list,
+        default=["q_proj", "v_proj", "o_proj", "fc1", "fc2"],
+        help="LoRA module",
     )
     args = parser.parse_args()
     main(args)

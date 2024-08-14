@@ -29,6 +29,7 @@ class WorkerDataset(Dataset):
         task="halueval",
         split=1.0,
         mode="pew",
+        template="",
     ):
         super(WorkerDataset, self).__init__()
         with open(data_path) as fin:
@@ -38,6 +39,7 @@ class WorkerDataset(Dataset):
         self.evalmode = evalmode
         self.task = task
         self.mode = mode
+        self.template = template
 
         if split < 0.9:
             start = int(len(self.data) * split)
@@ -56,7 +58,7 @@ class WorkerDataset(Dataset):
     def preprocessing(self, data):
         datasamples = []
         labels = []
-        if self.mode == "pew" or self.mode == "pewcrowd":
+        if self.mode == "pew" or "pewcrowd" in self.mode:
             for llm in self.evidence_llm:
                 datasample = []
                 for cllm in self.evidence_llm:
