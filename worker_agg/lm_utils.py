@@ -162,6 +162,7 @@ class FinetuneLM:
         # Train loop
         best_loss = float('inf')
         best_epoch = 0
+        _ = self.eval_one_epoch()
         for epoch in range(self.num_train_epochs):
             self.model.train()
             self.train_one_epoch(epoch,)
@@ -193,7 +194,8 @@ class FinetuneLM:
         for i, batch in enumerate(self.train_dataloader):
             inputs, labels = batch
             logits = self.model(inputs)
-            loss = self.criterion(logits, labels.float())
+            # loss = self.criterion(logits, labels.float())
+            loss = self.criterion(logits, labels)
             loss = loss / self.gradient_accumulation_steps
             loss.backward()
 
@@ -218,13 +220,19 @@ class FinetuneLM:
             inputs, labels = batch
             # forward pass
             logits = self.model(inputs)
+            # print("shape of logits: ", logits.shape)
+            # print("shape of labels: ", labels.shape)
             # calculate loss
-            loss = self.criterion(logits, labels.float())
+            # loss = self.criterion(logits, labels.float())
+            loss = self.criterion(logits, labels)
             total_loss += loss.item() * inputs['input_ids'].size(0)
             # prediction
-            preds = (logits > 0).int()
+            probs = torch.softmax(logits, dim=1)[:,1]
+            # preds = (logits > 0).int()
+            preds = (probs > 0.5).int()
             hits += sum(labels.view(-1) == preds.view(-1))
-            total += preds.size(0)
+            # total += preds.size(0)
+            total += preds.view(-1).size(0)
         elapsed_time = time.time() - start
         # print("Accuracy: {:.2f}".format(hits/total))
         avg_loss = total_loss / total

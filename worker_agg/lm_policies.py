@@ -164,13 +164,12 @@ class CrowdLayerLM:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collate_fn(self, batch):
-        input_ids, ests, outcomes = zip(*batch)
+        input_ids, ests = zip(*batch)
         input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(self.device)
         attn_mask = input_ids != 0
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
-        # ests = torch.stack(ests).to(self.device)
-        outcomes = torch.stack(outcomes).to(self.device)
-        return inputs, outcomes
+        ests = torch.stack(ests).to(self.device).long()
+        return inputs, ests
 
     def fit(self, train_data, val_data):
         train_dataloader = DataLoader(

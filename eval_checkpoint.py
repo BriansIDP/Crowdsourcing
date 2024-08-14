@@ -24,6 +24,8 @@ def eval_model(model, dataloader):
     total = 0
     for i, batch in enumerate(tqdm(dataloader)):
         inputs, ests, labels = batch
+        # if model.type
+        # logits = model(inputs, predict_gt=True)
         logits = model(inputs)
         preds = (logits > 0).int()
         hits += sum(labels.view(-1) == preds.view(-1))
@@ -43,14 +45,17 @@ def load_checkpoint(model, model_dir, epoch):
 
 @hydra.main(version_base=None, config_path="./conf", config_name="config")
 def main(cfg):
-    model = LMplusOneLayer(
-        model_path="gpt2",
-        seed=69420,
-    )
+    # model = LMplusOneLayer(
+    #     model_path="gpt2",
+    #     seed=69420,
+    # )
     # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_21-29-32"
     # epoch = 4
     # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_15-45-21"
     # epoch = 2
+    model_constructor = worker_agg.__dict__[cfg.neural_net.name]
+    model = model_constructor(**cfg.neural_net.params)
+    breakpoint()
     model_dir = cfg.policy.params.model_dir
     epoch = cfg.eval.epoch
     load_checkpoint(model, model_dir, epoch)

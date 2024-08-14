@@ -1,6 +1,6 @@
-name: "CrowdLayerNN"
+name: "CrowdLayerLM"
 params:
-  model_dir: 'exp/lm_mv'
+  model_dir: 'exp/crowd_lm'
   lr: 1e-4
   weight_decay: 0.0
   gradient_accumulation_steps: 1
