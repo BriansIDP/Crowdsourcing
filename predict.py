@@ -46,7 +46,7 @@ def main(args):
         evalmode=True,
         task=task,
         split=1.0, # train_args['split'] if 'split' in train_args else 1.0,
-        mode=train_args["mode"] if train_args["mode"] != "pewcrowd" else "gt",
+        mode=train_args["mode"] if "pewcrowd" not in train_args["mode"] else "gt",
     )
     test_dataloader = DataLoader(
         testdata,
@@ -103,8 +103,8 @@ def main(args):
                 expected_error=all_errors,
                 labels=(workers < 0.5).float(),
             )
-            if train_args["mode"] in ["gt", "pewcrowd"]:
-                prediction = prediction[:, 0] > 0.5 if train_args["mode"] == "pewcrowd" else prediction[:, 0] < 0.5
+            if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp"]:
+                prediction = prediction[:, 0] > 0.5 if "pewcrowd" in train_args["mode"] else prediction[:, 0] < 0.5
                 total_hits += (prediction == labels[:, 0]).sum()
             else:
                 total_hits += (prediction == labels[:, 0]).sum()
