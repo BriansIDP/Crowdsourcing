@@ -14,8 +14,8 @@ import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
 from transformers import AutoModelForSeq2SeqLM
-# from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
-# from peft import PeftConfig, PeftModel
+from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
+from peft import PeftConfig, PeftModel
 
 
 class WorkerPredictor(torch.nn.Module):

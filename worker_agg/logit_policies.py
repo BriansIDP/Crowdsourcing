@@ -302,3 +302,16 @@ class AvgSSLPreds:
         if testing:
             return labels, group_ests, preds
         return labels
+
+class Averaging:
+    def __init__(self,
+            num_workers: int,):
+        self.num_workers = num_workers
+    
+    def fit(self, estimates: np.ndarray) -> None:
+        pass
+
+    def predict(self, estimates: np.ndarray) -> np.ndarray:
+        group_ests = np.mean(estimates, axis=1)
+        labels = np.array(group_ests > 0, dtype=np.int32)
+        return labels

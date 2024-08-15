@@ -31,7 +31,10 @@ def get_policy(cfg, ):
     if os.path.exists(policy_dict['model_dir']):
         raise ValueError(f"Directory {policy_dict['model_dir']} already exists")
     os.makedirs(policy_dict['model_dir'])
-    model = model_constructor(**cfg.neural_net.params)
+    if cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork']:
+        num_workers = len(cfg.data_loader.params.model_list)
+        model = model_constructor(**cfg.neural_net.params,
+                                    num_workers=num_workers)
     policy = policy_constructor(**policy_dict, model=model)
     return policy, policy_dict['model_dir']
 

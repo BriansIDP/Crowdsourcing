@@ -11,7 +11,8 @@ def get_data(cfg, split_type='train', split=0.5, shuffle=True):
         out = data_constructor(**cfg.data_loader.params).get_data(split_type=split_type, 
                                                                   split=split, shuffle=shuffle)
     else:
-        out = data_constructor(**cfg.data_loader.params).get_data(split_type)
+        out = data_constructor(**cfg.data_loader.params).get_data()
+        # .get_data(split_type)
     return out
 
 def get_data_val(cfg):

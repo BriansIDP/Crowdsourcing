@@ -3,6 +3,7 @@ import math
 import time
 from collections import OrderedDict
 from typing import Dict
+import copy
 
 import numpy as np
 import torch
@@ -265,6 +266,119 @@ class FinetuneLM:
         # save tokenizer
         self.model.tokenizer.save_pretrained(fulloutput)
         return checkpoint
+    
+class PEWNetwork(nn.Module):
+    def __init__(
+        self,
+        num_workers: int,
+        model_path: str,
+        seed: int,
+        hidden_size_ow: int = 100,
+        dropout_prob: float = 0.1,
+        cache_dir: str = "scratch/cache",
+        n_unfreeze: int = 0,
+        loss_fn_type: str = 'mse',
+    ):
+        super(PEWNetwork, self).__init__()
+        
+        assert seed is not None, "Please provide a seed for reproducibility"
+        self.seed = seed
+        self.num_workers = num_workers
+        self.dropout_prob = dropout_prob
+        assert loss_fn_type in ['mse','ce'], "Loss function type must be either 'mse' or 'ce'"
+        self.loss_fn_type = loss_fn_type
+
+        # Determine device: use CUDA if available
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Load the pre-trained language model and move to the correct device
+        self.llm = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            cache_dir=cache_dir
+        ).to(self.device)
+        self.n_unfreeze = n_unfreeze
+        for param in self.llm.parameters():
+            param.requires_grad = False
+
+        # Separate the frozen and unfrozen parts
+        self.frozen_part = self.llm.transformer.h[:-n_unfreeze]
+        self.unfrozen_part = self.llm.transformer.h[-n_unfreeze:]
+
+        self.hidden_size_ow = hidden_size_ow
+        for i in range(self.num_workers):
+            setattr(self, f"lm_unfrozen_{i+1}", copy.deepcopy(self.unfrozen_part).to(self.device))
+            setattr(self, f"ow_l1_{i+1}", nn.Linear(num_workers-1, hidden_size_ow).to(self.device))
+            setattr(self, f"ow_l2_{i+1}", nn.Linear(self.llm.config.hidden_size + hidden_size_ow, 1).to(self.device))
+
+        # Initialize weights
+        self._initialize_weights()
+
+        # Load the tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    def _initialize_weights(self):
+        generator = torch.Generator()  # Ensure generator is on the correct device
+        generator.manual_seed(self.seed)
+        # Manually generate random numbers and apply kaiming initialization
+        for i in range(self.num_workers):
+            with torch.no_grad():
+                fan = nn.init._calculate_correct_fan(getattr(self, f"ow_l1_{i+1}").weight, 'fan_in')
+                gain = nn.init.calculate_gain('relu')
+                std = gain / fan ** 0.5
+                getattr(self, f"ow_l1_{i+1}").weight.data = \
+                    torch.normal(0, std, size=getattr(self, f"ow_l1_{i+1}").weight.shape, 
+                                                                            generator=generator).to(self.device)       
+            nn.init.zeros_(getattr(self, f"ow_l1_{i+1}").bias)
+            with torch.no_grad():
+                fan = nn.init._calculate_correct_fan(getattr(self, f"ow_l2_{i+1}").weight, 'fan_in')
+                gain = 1.0
+                std = gain / fan ** 0.5
+                getattr(self, f"ow_l2_{i+1}").weight.data = \
+                    torch.normal(0, std, size=getattr(self, f"ow_l2_{i+1}").weight.shape, 
+                                                                            generator=generator).to(self.device)
+
+    def forward(self, 
+                inputs: Dict[str, torch.Tensor],
+                ests: torch.Tensor) -> torch.Tensor:
+        # Ensure inputs are on the correct device
+        attention_mask = inputs["attention_mask"].to(self.device)
+        input_ids = inputs["input_ids"].to(self.device)
+
+        # Pass input through the frozen part
+        hidden_states = self.llm.transformer.wte(input_ids)
+        # ChatGPT says applying dropout is standard practice even though this is from the frozen part
+        hidden_states = self.llm.transformer.drop(hidden_states)
+
+        for layer in self.frozen_part:
+            hidden_states = layer(hidden_states, attention_mask=attention_mask)[0]
+
+        logits = []
+        for i in range(self.num_workers):
+            branch_hidden_states = hidden_states.clone()
+            for layer in getattr(self, f"lm_unfrozen_{i+1}"):
+                branch_hidden_states = layer(branch_hidden_states, attention_mask=attention_mask)[0]
+
+            # Extract the hidden states at the positions specified by 'insizes'
+            insizes = attention_mask.sum(dim=-1) - 1
+            pred_hidden = branch_hidden_states[torch.arange(insizes.size(0)), insizes]
+            # copy_outputs.append(pred_hidden)
+
+            other_ids = torch.arange(self.num_workers)[torch.arange(self.num_workers) != i]
+            ow_ests = ests[:,other_ids]
+            ow_op = getattr(self, f"ow_l1_{i+1}")(ow_ests)
+            ow_op = torch.relu(ow_op)
+            # apply dropout
+            ow_op = nn.functional.dropout(ow_op, p=self.dropout_prob, training=self.training)
+            pred_hidden = torch.cat((pred_hidden, ow_op), dim=1)
+            pred_hidden = getattr(self, f"ow_l2_{i+1}")(pred_hidden)
+            logits.append(pred_hidden)
+        logits = torch.cat(logits, dim=1)
+        if self.loss_fn_type == 'ce':
+            # need logits to be of shape (batch_size, 2, num_workers)
+            # concatenate logits with -logits
+            logits = logits.unsqueeze(1)
+            logits = torch.cat((logits, -logits), dim=1)
+        return logits
 
 class CrowdLayerNN(nn.Module):
     def __init__(
@@ -325,6 +439,7 @@ class CrowdLayerNN(nn.Module):
     def _initialize_weights(self):
         generator = torch.Generator()  # Ensure generator is on the correct device
         generator.manual_seed(self.seed)
+        # TODO: gains are potentially incorrect.
         # Manually generate random numbers and apply kaiming initialization
         with torch.no_grad():
             fan = nn.init._calculate_correct_fan(self.hidden_layer.weight, 'fan_in')
@@ -335,15 +450,19 @@ class CrowdLayerNN(nn.Module):
         nn.init.zeros_(self.hidden_layer.bias)
         with torch.no_grad():
             fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
-            gain = nn.init.calculate_gain('relu')
+            gain = 1.0
             std = gain / fan ** 0.5
             self.output_layer.weight.data = torch.normal(0, std, size=self.output_layer.weight.shape, 
                                                          generator=generator).to(self.device)       
         nn.init.zeros_(self.output_layer.bias)
 
-        # make crowd layer weights all 1
+        # # make crowd layer weights all 1
+        # for i in range(self.num_workers):
+        #     nn.init.ones_(getattr(self, "crowd_{}".format(i+1)).weight)
+
+        # crowd layer weights should be identity
         for i in range(self.num_workers):
-            nn.init.ones_(getattr(self, "crowd_{}".format(i+1)).weight)
+            nn.init.eye_(getattr(self, "crowd_{}".format(i+1)).weight)
 
     def forward(self, 
                 inputs: Dict[str, torch.Tensor],
