@@ -19,15 +19,21 @@ def get_data(cfg, split_type='train', with_gt=False):
     data = data_constructor(**data_dict)
     return data
 
-def eval_model(model, dataloader):
+def eval_model(cfg, model, dataloader):
     hits = 0
     total = 0
     for i, batch in enumerate(tqdm(dataloader)):
         inputs, ests, labels = batch
         # if model.type
-        # logits = model(inputs, predict_gt=True)
-        logits = model(inputs)
-        preds = (logits > 0).int()
+        if cfg.neural_net.name in ['PEWNetwork']:
+            preds = model(inputs, ests, predict_gt=True)
+            preds = (preds > 0.5).int()
+        elif cfg.neural_net.name in ['CrowdLayerNN']:
+            preds = model(inputs, predict_gt=True)
+            preds = (preds > 0.5).int()
+        elif cfg.neural_net.name in ['LMplusOneLayer']:
+            logits = model(inputs)
+            preds = (logits > 0).int()
         hits += sum(labels.view(-1) == preds.view(-1))
         total += preds.size(0)
     acc = hits/total
@@ -54,8 +60,12 @@ def main(cfg):
     # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_15-45-21"
     # epoch = 2
     model_constructor = worker_agg.__dict__[cfg.neural_net.name]
-    model = model_constructor(**cfg.neural_net.params)
-    breakpoint()
+    if cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork']:
+        num_workers = len(cfg.data_loader.params.evidence_llm)
+        model = model_constructor(**cfg.neural_net.params,
+                                    num_workers=num_workers)
+    else:
+        model = model_constructor(**cfg.neural_net.params)
     model_dir = cfg.policy.params.model_dir
     epoch = cfg.eval.epoch
     load_checkpoint(model, model_dir, epoch)
@@ -67,7 +77,7 @@ def main(cfg):
                     shuffle=False,
                     collate_fn=data.collate_fn,
                 )
-        acc = eval_model(model, dataloader)
+        acc = eval_model(cfg, model, dataloader)
         print(f"{split_type} accuracy: {acc}")
 
 if __name__ == "__main__":

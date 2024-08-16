@@ -203,7 +203,7 @@ class CrowdLayerLM:
         preds = (logits>0).int().detach()
         return preds
 
-class CrowdLayerLM:
+class AvgSSLPredsLM:
     def __init__(self, model,
                  model_dir: str,
                  lr: float=0.001,
@@ -260,10 +260,19 @@ class CrowdLayerLM:
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
-                               loss_fn_type=self.model.loss_fn_type)
+                               loss_fn_type=self.model.loss_fn_type,
+                               need_ests=True)
         finetuner.run()
 
-    def predict(self, inputs, ests: torch.Tensor):
-        logits = self.model(inputs, ests)
-        preds = (logits>0).int().detach()
+    def predict(self, inputs, ests: torch.Tensor,
+                predict_gt: bool=False):
+        if not predict_gt:
+            ssl_preds = self.model(inputs, ests, predict_gt=predict_gt)
+            # ssl_preds are logits if loss_fn_type is 'ce'
+            # else they are linear layer outputs
+            return ssl_preds
+        else:
+            # preds are avg of linear layer outputs
+            preds = self.model(inputs, ests, predict_gt=True)
+            preds = (preds>0.5).int().detach()
         return preds

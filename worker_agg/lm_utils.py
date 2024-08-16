@@ -101,7 +101,8 @@ class FinetuneLM:
                 lr: float=0.001, weight_decay: float=1e-5, 
                 gradient_accumulation_steps: int=1, num_warmup_steps: float=0.03,
                 num_train_epochs: int=10, lr_scheduler_type: str='cosine',
-                log_interval: int=100, patience: int=2, loss_fn_type='bce') -> None:
+                log_interval: int=100, patience: int=2, loss_fn_type='bce',
+                need_ests: bool=False) -> None:
         self.model = model
         self.train_dataloader = train_dataloader
         self.val_dataloader = val_dataloader
@@ -115,6 +116,7 @@ class FinetuneLM:
         self.log_interval = log_interval
         self.patience = patience
         self.loss_fn_type = loss_fn_type
+        self.need_ests = need_ests
         if self.loss_fn_type == 'bce':
             self.criterion = nn.BCEWithLogitsLoss()
         elif self.loss_fn_type == 'mse':
@@ -163,7 +165,7 @@ class FinetuneLM:
         # Train loop
         best_loss = float('inf')
         best_epoch = 0
-        _ = self.eval_one_epoch()
+        # _ = self.eval_one_epoch()
         for epoch in range(self.num_train_epochs):
             self.model.train()
             self.train_one_epoch(epoch,)
@@ -194,9 +196,14 @@ class FinetuneLM:
         start = time.time()
         for i, batch in enumerate(self.train_dataloader):
             inputs, labels = batch
-            logits = self.model(inputs)
-            # loss = self.criterion(logits, labels.float())
-            loss = self.criterion(logits, labels)
+            if not self.need_ests:
+                logits = self.model(inputs)
+            else:
+                logits = self.model(inputs, labels)
+            if self.loss_fn_type in ['bce', 'mse']:
+                loss = self.criterion(logits, labels.float())
+            elif self.loss_fn_type == 'ce':
+                loss = self.criterion(logits, labels)
             loss = loss / self.gradient_accumulation_steps
             loss.backward()
 
@@ -213,6 +220,7 @@ class FinetuneLM:
                         logfile)
 
     def eval_one_epoch(self):
+        self.model.eval() # Set model to evaluate mode
         hits = 0
         total = 0
         total_loss = 0.0
@@ -220,17 +228,24 @@ class FinetuneLM:
         for i, batch in enumerate(self.val_dataloader):
             inputs, labels = batch
             # forward pass
-            logits = self.model(inputs)
-            # print("shape of logits: ", logits.shape)
+            if not self.need_ests:
+                preds = self.model(inputs)
+            else:
+                preds = self.model(inputs, labels)
+            # print("shape of preds: ", preds.shape)
             # print("shape of labels: ", labels.shape)
             # calculate loss
-            # loss = self.criterion(logits, labels.float())
-            loss = self.criterion(logits, labels)
+            if self.loss_fn_type in ['bce', 'mse']:
+                loss = self.criterion(preds, labels.float())
+                if self.loss_fn_type == 'bce':
+                    preds = torch.sigmoid(preds)
+                else:
+                    pass # preds should act like probabilities
+            elif self.loss_fn_type == 'ce':
+                loss = self.criterion(preds, labels)
+                preds = torch.softmax(preds, dim=1)[:,1]
             total_loss += loss.item() * inputs['input_ids'].size(0)
-            # prediction
-            probs = torch.softmax(logits, dim=1)[:,1]
-            # preds = (logits > 0).int()
-            preds = (probs > 0.5).int()
+            preds = (preds > 0.5).long() # labels are long
             hits += sum(labels.view(-1) == preds.view(-1))
             # total += preds.size(0)
             total += preds.view(-1).size(0)
@@ -339,24 +354,40 @@ class PEWNetwork(nn.Module):
 
     def forward(self, 
                 inputs: Dict[str, torch.Tensor],
-                ests: torch.Tensor) -> torch.Tensor:
+                ests: torch.tensor,
+                predict_gt: bool=False) -> torch.Tensor:
         # Ensure inputs are on the correct device
         attention_mask = inputs["attention_mask"].to(self.device)
         input_ids = inputs["input_ids"].to(self.device)
-
-        # Pass input through the frozen part
-        hidden_states = self.llm.transformer.wte(input_ids)
+        # Check the shapes of input_ids and attention_mask
+        assert input_ids.shape == attention_mask.shape, \
+            f"input_ids shape {input_ids.shape} does not match attention_mask shape {attention_mask.shape}"
+        # Get token embeddings (wte) and positional embeddings (wpe)
+        token_embeddings = self.llm.transformer.wte(input_ids)  # Word/Token Embeddings
+        position_ids = torch.arange(input_ids.size(-1), dtype=torch.long, device=self.device).unsqueeze(0)
+        position_embeddings = self.llm.transformer.wpe(position_ids)  # Positional Embeddings
+        # Combine token and positional embeddings
+        hidden_states = token_embeddings + position_embeddings
         # ChatGPT says applying dropout is standard practice even though this is from the frozen part
         hidden_states = self.llm.transformer.drop(hidden_states)
 
-        for layer in self.frozen_part:
-            hidden_states = layer(hidden_states, attention_mask=attention_mask)[0]
+        # Prepare attention mask for transformer blocks
+        # See forward function in transformers.models.gpt2.modeling_gpt2.GPT2Model
+        # specifically, lines 815 and 823
+        # TODO: this might not work for all models
+        ext_attention_mask = attention_mask[:, None, None, :].to(device=self.device).float()
+        ext_attention_mask = (1.0 - ext_attention_mask) * torch.finfo(ext_attention_mask.dtype).min
 
-        logits = []
+        for layer in self.frozen_part:
+            hidden_states = layer(hidden_states, attention_mask=ext_attention_mask)[0]
+
+        preds = []
         for i in range(self.num_workers):
             branch_hidden_states = hidden_states.clone()
             for layer in getattr(self, f"lm_unfrozen_{i+1}"):
-                branch_hidden_states = layer(branch_hidden_states, attention_mask=attention_mask)[0]
+                branch_hidden_states = layer(branch_hidden_states, attention_mask=ext_attention_mask)[0]
+            # apply layer norm -- see forward function in transformers.models.gpt2.modeling_gpt2.GPT2Model
+            branch_hidden_states = self.llm.transformer.ln_f(branch_hidden_states)
 
             # Extract the hidden states at the positions specified by 'insizes'
             insizes = attention_mask.sum(dim=-1) - 1
@@ -364,21 +395,30 @@ class PEWNetwork(nn.Module):
             # copy_outputs.append(pred_hidden)
 
             other_ids = torch.arange(self.num_workers)[torch.arange(self.num_workers) != i]
-            ow_ests = ests[:,other_ids]
+            ow_ests = ests[:,other_ids].clone().float()
             ow_op = getattr(self, f"ow_l1_{i+1}")(ow_ests)
             ow_op = torch.relu(ow_op)
             # apply dropout
             ow_op = nn.functional.dropout(ow_op, p=self.dropout_prob, training=self.training)
             pred_hidden = torch.cat((pred_hidden, ow_op), dim=1)
             pred_hidden = getattr(self, f"ow_l2_{i+1}")(pred_hidden)
-            logits.append(pred_hidden)
-        logits = torch.cat(logits, dim=1)
+            preds.append(pred_hidden)
+        preds = torch.cat(preds, dim=1)
         if self.loss_fn_type == 'ce':
-            # need logits to be of shape (batch_size, 2, num_workers)
-            # concatenate logits with -logits
-            logits = logits.unsqueeze(1)
-            logits = torch.cat((logits, -logits), dim=1)
-        return logits
+            # need preds to be of shape (batch_size, 2, num_workers)
+            # concatenate preds with -preds
+            if not predict_gt:
+                preds = preds.unsqueeze(1)
+                preds = torch.cat((preds, -preds), dim=1)
+            else:
+                # convert to probabilities
+                preds = torch.sigmoid(preds)
+                # avg over workers
+                preds = torch.mean(preds, dim=1)
+        elif self.loss_fn_type == 'mse' and predict_gt:
+            # preds are probabilities already
+            preds = torch.mean(preds, dim=1)
+        return preds
 
 class CrowdLayerNN(nn.Module):
     def __init__(
