@@ -3,9 +3,12 @@ import os
 from transformers import AutoTokenizer
 import hydra
 import torch
+from torch.profiler import profile, record_function, ProfilerActivity
+import numpy as np
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
 
 from worker_agg import LMplusOneLayer
 import worker_agg
@@ -22,23 +25,31 @@ def get_data(cfg, split_type='train', with_gt=False):
 def eval_model(cfg, model, dataloader):
     hits = 0
     total = 0
+
+    # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+    #     with record_function("model_inference"):
+    probs = []
     for i, batch in enumerate(tqdm(dataloader)):
         inputs, ests, labels = batch
-        # if model.type
         if cfg.neural_net.name in ['PEWNetwork']:
             preds = model(inputs, ests, predict_gt=True)
+            probs.append(preds.detach())
             preds = (preds > 0.5).int()
         elif cfg.neural_net.name in ['CrowdLayerNN']:
             preds = model(inputs, predict_gt=True)
+            probs.append(preds.detach())
             preds = (preds > 0.5).int()
         elif cfg.neural_net.name in ['LMplusOneLayer']:
             logits = model(inputs)
+            probs.append(torch.sigmoid(logits.detach()))
             preds = (logits > 0).int()
         hits += sum(labels.view(-1) == preds.view(-1))
         total += preds.size(0)
-    acc = hits/total
-    return acc
-    # print("Accuracy: {:.2f}".format(hits/total))
+    probs = torch.cat(probs, dim=0)
+
+    # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+    acc = hits / total
+    return acc, probs
 
 def load_checkpoint(model, model_dir, epoch):
     fulloutput = os.path.join(model_dir, "checkpoint.{}".format(epoch))
@@ -69,6 +80,8 @@ def main(cfg):
     model_dir = cfg.policy.params.model_dir
     epoch = cfg.eval.epoch
     load_checkpoint(model, model_dir, epoch)
+    model.eval()
+    probs_com = []
     for split_type in ['train', 'val']:
         data = get_data(cfg, split_type=split_type, with_gt=True)
         dataloader = DataLoader(
@@ -77,8 +90,11 @@ def main(cfg):
                     shuffle=False,
                     collate_fn=data.collate_fn,
                 )
-        acc = eval_model(cfg, model, dataloader)
+        acc, probs = eval_model(cfg, model, dataloader)
+        probs_com.append(probs)
         print(f"{split_type} accuracy: {acc}")
+    probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
+    np.save(f"{model_dir}/probs.npy", probs_com)
 
 if __name__ == "__main__":
     main()
