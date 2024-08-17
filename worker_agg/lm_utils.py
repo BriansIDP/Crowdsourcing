@@ -66,7 +66,8 @@ class LMplusOneLayer(nn.Module):
         # Manually generate random numbers and apply kaiming initialization
         with torch.no_grad():
             fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
-            gain = nn.init.calculate_gain('relu')
+            # this was set to relu before
+            gain = 1.0
             std = gain / fan ** 0.5
             self.output_layer.weight.data = torch.normal(0, std, size=self.output_layer.weight.shape, 
                                                          generator=generator).to(self.device)       

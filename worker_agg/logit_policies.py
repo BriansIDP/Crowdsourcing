@@ -218,6 +218,7 @@ class AvgSSLPreds:
                  use_joblib_seeds: bool=True,
                  logits: bool=True
                  ) -> None:
+        print(f"lr: {lr}, weight_decay: {weight_decay}, patience: {patience}, epochs: {epochs}")
         self.neural_nets = neural_nets
         self.num_workers = num_workers
         assert len(self.neural_nets) == self.num_workers

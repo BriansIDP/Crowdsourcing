@@ -91,7 +91,8 @@ class EMAsymmetricBinary:
                  num_workers: int,
                  skill_init: Union[np.ndarray, None] = None,
                  tol: float = 1e-8, max_iter: int = 100,
-                 reg_m_step: float = 0):
+                 reg_m_step: float = 0,
+                 prior_probs_file: Union[str, None] = None):
         self.rng = np.random.default_rng(seed)
         self.num_workers = num_workers
         # skill: probability of answering correctly
@@ -103,6 +104,10 @@ class EMAsymmetricBinary:
         self.epsilon = tol
         self.max_iter = max_iter
         self.reg_m_step = reg_m_step
+        if prior_probs_file is not None:
+            self.prior_probs = np.load(prior_probs_file)
+        else:
+            self.prior_probs = None
     
     def fit(self, ests: np.ndarray):
         num_samples = ests.shape[0]
@@ -125,13 +130,28 @@ class EMAsymmetricBinary:
     def e_step(self, ests: np.ndarray):
         num_samples = ests.shape[0]
         prob_1 = np.zeros(num_samples)*np.nan
+
         log_unnorm_probs = np.ones((num_samples, 2))*np.nan
+        if self.prior_probs is not None:
+            log_prior_prob_1 = np.log(1-self.prior_probs).squeeze()
+            log_prior_prob_0 = np.log(self.prior_probs).squeeze()
+        else:
+            log_prior_prob_1 = np.log(0.5)
+            log_prior_prob_0 = np.log(0.5)
         log_unnorm_probs[:, 1] = ests@np.log(self.skill[:,1]) \
-            + (1-ests)@np.log(1-self.skill[:,1])
+            + (1-ests)@np.log(1-self.skill[:,1]) + log_prior_prob_1
         log_unnorm_probs[:, 0] = (1-ests)@np.log(self.skill[:,0]) \
-            + ests@np.log(1-self.skill[:,0])
-        log_prob_1 = log_unnorm_probs[:, 1] - np.logaddexp(log_unnorm_probs[:, 0], log_unnorm_probs[:, 1])
+            + ests@np.log(1-self.skill[:,0]) + log_prior_prob_0
+        log_prob_1 = log_unnorm_probs[:, 1] \
+            - np.logaddexp(log_unnorm_probs[:, 0], log_unnorm_probs[:, 1])
         prob_1 = np.exp(log_prob_1)
+        # log_unnorm_probs = np.ones((num_samples, 2))*np.nan
+        # log_unnorm_probs[:, 1] = ests@np.log(self.skill[:,1]) \
+        #     + (1-ests)@np.log(1-self.skill[:,1])
+        # log_unnorm_probs[:, 0] = (1-ests)@np.log(self.skill[:,0]) \
+        #     + ests@np.log(1-self.skill[:,0])
+        # log_prob_1 = log_unnorm_probs[:, 1] - np.logaddexp(log_unnorm_probs[:, 0], log_unnorm_probs[:, 1])
+        # prob_1 = np.exp(log_prob_1)
         assert prob_1.shape == (num_samples,)
         try:
             assert np.all(prob_1 >= 0) and np.all(prob_1 <= 1)
