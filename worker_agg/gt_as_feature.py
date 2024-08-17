@@ -13,7 +13,7 @@ class CombinedModel(nn.Module):
         self,
         model_path: str,
         seed: int,
-        num_ests: int,
+        num_workers: int,
         hidden_size: int, 
         dropout_prob: float = 0.1,
         cache_dir: str = "scratch/cache",
@@ -25,7 +25,7 @@ class CombinedModel(nn.Module):
         assert seed is not None, "Please provide a seed for reproducibility"
         self.seed = seed
         self.dropout_prob = dropout_prob
-        self.num_ests = num_ests
+        self.num_workers = num_workers
 
         # Determine device: use CUDA if available
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,7 +53,7 @@ class CombinedModel(nn.Module):
 
         # Initialize additional layers and move them to the correct device
         self.hidden_size = hidden_size
-        self.com_layer = nn.Linear(self.llm.config.hidden_size + num_ests, hidden_size).to(self.device)
+        self.com_layer = nn.Linear(self.llm.config.hidden_size + num_workers, hidden_size).to(self.device)
         self.output_layer = nn.Linear(hidden_size, 1).to(self.device)
 
         # Initialize weights

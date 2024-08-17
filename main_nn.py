@@ -31,7 +31,11 @@ def get_policy(cfg, ):
     if os.path.exists(policy_dict['model_dir']):
         raise ValueError(f"Directory {policy_dict['model_dir']} already exists")
     os.makedirs(policy_dict['model_dir'])
-    if cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork']:
+    if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
+        num_workers = len(cfg.data_loader.params.evidence_llm)
+        model = model_constructor(**cfg.neural_net.params,
+                                    num_workers=1)
+    elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
                                     num_workers=num_workers)
@@ -58,7 +62,7 @@ def main(cfg):
     # please dump the config file to the model_dir
     with open(os.path.join(model_dir, 'model_config.yaml'), 'w') as f:
         OmegaConf.save(cfg, f)
-    if cfg.policy.name == 'LMGroundTruth':
+    if cfg.policy.name in ['LMGroundTruth', 'GTAsFeature']:
         train_data = get_data(cfg, split_type='train', with_gt=True)
         val_data = get_data(cfg, split_type='val', with_gt=True)
     else:
