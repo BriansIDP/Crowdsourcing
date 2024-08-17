@@ -4,16 +4,16 @@ trainfile="data/halueval_dialogue.json"
 # trainfile="data/artificial.json"
 # trainfile="data/wikibio_crosscheck_gpt3.json"
 # expdir="exp/crosscheck_pew_gpt2_logistic_relu"
-expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_constrained_largebatch
+expdir=exp/brian_pewcrowd_K_10
 # expdir=exp/pewcrowd_llama3_mse_direct_crowdlayer_constrained_freeze
 # expdir=exp/transformer_gpt2_mse_artificial
 mkdir -p $expdir
-regression=skill
-mode=pewcrowdimp
+regression=hardlabel
+mode=pewcrowd
 
 python train_nn.py \
     --model_path gpt2 \
-    --batch_size 32 \
+    --batch_size 16 \
     --learning_rate 1e-4 \
     --gradient_accumulation_steps 1 \
     --num_train_epochs 10 \
@@ -24,11 +24,12 @@ python train_nn.py \
     --logfile $expdir/log.txt \
     --log_interval 100 \
     --train_data_path $trainfile \
-    --evidence_llm "llama3,beluga,mistral,zephyr,starling" \
+    --evidence_llm "llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25" \
     --regression $regression \
     --mode $mode \
     --split 0.1 \
     --freeze_epoch 200 \
+    # --evidence_llm "llama3,beluga,mistral,zephyr,starling" \
     # --evidence_llm "mistral,llama2,vicuna,beluga,starling,openorca,gpt3" \
     # "system_0,system_1,system_2,system_3,system_4" \
     #  "llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25" \

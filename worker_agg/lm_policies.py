@@ -199,8 +199,8 @@ class CrowdLayerLM:
         finetuner.run()
 
     def predict(self, inputs, ests):
-        logits = self.model(inputs, predict_gt=True)
-        preds = (logits>0).int().detach()
+        sigmoids = self.model(inputs, predict_gt=True)
+        preds = (sigmoids>0.5).int().detach()
         return preds
 
 class AvgSSLPredsLM:
