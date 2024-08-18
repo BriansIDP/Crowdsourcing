@@ -89,10 +89,11 @@ class CombinedModel(nn.Module):
                                                          generator=generator).to(self.device)
         nn.init.zeros_(self.output_layer.bias)
 
-    def forward(self, 
-                inputs: Dict[str, torch.Tensor],
-                ests: torch.Tensor,):
+    def forward(self, inputs):
+                # inputs: Dict[str, torch.Tensor],
+                # ests: torch.Tensor,):
         # Ensure inputs are on the correct device
+        inputs, ests = inputs
         attention_mask = inputs["attention_mask"].to(self.device)
         outputs = self.llm(
             input_ids=inputs["input_ids"].to(self.device),
@@ -151,7 +152,7 @@ class GTAsFeature:
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
         # ests = torch.stack(ests).to(self.device)
         outcomes = torch.stack(outcomes).to(self.device)
-        return inputs, outcomes
+        return (inputs, outcomes), outcomes
 
     def fit(self, train_data, val_data):
         train_dataloader = DataLoader(
@@ -177,7 +178,6 @@ class GTAsFeature:
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
-                               need_ests=True,
                                loss_fn_type='bce',)
         finetuner.run()
 

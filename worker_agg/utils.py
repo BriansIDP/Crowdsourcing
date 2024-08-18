@@ -205,7 +205,7 @@ def train_neural_net_with_loaders(neural_net, train_loader, val_loader,
             lr_scheduler.step()
             optimizer.zero_grad()
 
-            if batch_idx % print_every == 0:
+            if (batch_idx+1) % print_every == 0:
                 print(f"Epoch {epoch} (0-idxed), Batch {batch_idx} (0-idxed), Loss: {loss.item()}, LR: {current_lr:.6f}")
 
         # Validation
