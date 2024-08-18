@@ -6,7 +6,7 @@ from .data_loaders import HaluDialogueBinary, HaluQABinary, HaluDialogueLogit, H
 from .data_loaders import HaluDialBertPCA, HaluDialEmbed
 from .data_loaders import SynLogisticData, SynTwoLayerMLPData
 from .data_loaders import HaluDialBinaryLM
-from .utils import TwoLayerMLP, train_neural_net
+from .utils import TwoLayerMLP, train_neural_net, train_neural_net_with_loaders
 from .lm_utils import LMplusOneLayer, FinetuneLM
 from .lm_utils import PEWNetwork, CrowdLayerNN
 from .gt_as_feature import CombinedModel, GTAsFeature

@@ -53,8 +53,10 @@ class CombinedModel(nn.Module):
 
         # Initialize additional layers and move them to the correct device
         self.hidden_size = hidden_size
-        self.com_layer = nn.Linear(self.llm.config.hidden_size + num_workers, hidden_size).to(self.device)
-        self.output_layer = nn.Linear(hidden_size, 1).to(self.device)
+        self.dense = nn.Linear(num_workers, hidden_size).to(self.device)
+        # self.com_layer = nn.Linear(self.llm.config.hidden_size + num_workers, hidden_size).to(self.device)
+        # self.output_layer = nn.Linear(hidden_size, 1).to(self.device)
+        self.output_layer = nn.Linear(self.llm.config.hidden_size + hidden_size, 1).to(self.device)
 
         # Initialize weights
         self._initialize_weights()
@@ -66,13 +68,19 @@ class CombinedModel(nn.Module):
         generator = torch.Generator()  # Ensure generator is on the correct device
         generator.manual_seed(self.seed)
         # Manually generate random numbers and apply kaiming initialization
+        # with torch.no_grad():
+        #     fan = nn.init._calculate_correct_fan(self.com_layer.weight, 'fan_in')
+        #     gain = nn.init.calculate_gain('relu')
+        #     std = gain / fan ** 0.5
+        #     self.com_layer.weight.data = torch.normal(0, std, size=self.com_layer.weight.shape, 
+        #                                                  generator=generator).to(self.device)       
+        # nn.init.zeros_(self.com_layer.bias)
         with torch.no_grad():
-            fan = nn.init._calculate_correct_fan(self.com_layer.weight, 'fan_in')
+            fan = nn.init._calculate_correct_fan(self.dense.weight, 'fan_in')
             gain = nn.init.calculate_gain('relu')
             std = gain / fan ** 0.5
-            self.com_layer.weight.data = torch.normal(0, std, size=self.com_layer.weight.shape, 
-                                                         generator=generator).to(self.device)       
-        nn.init.zeros_(self.com_layer.bias)
+            self.dense.weight.data = torch.normal(0, std, size=self.dense.weight.shape, 
+                                                         generator=generator).to(self.device)
         with torch.no_grad():
             fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
             gain = 1.0
@@ -95,12 +103,17 @@ class CombinedModel(nn.Module):
         insizes = attention_mask.sum(dim=-1) - 1
         pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
         # dropout
-        pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
+        # pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
 
-        # Concatenate the estimated values
+        # # Concatenate the estimated values
+        # pred_hidden = torch.cat([pred_hidden, ests], dim=-1)
+        # pred_hidden = torch.relu(self.com_layer(pred_hidden))
+        # pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
+
+        ests = self.dense(ests)
+        ests = torch.relu(ests)
+        ests = torch.dropout(ests, p=self.dropout_prob, train=self.training)
         pred_hidden = torch.cat([pred_hidden, ests], dim=-1)
-        pred_hidden = torch.relu(self.com_layer(pred_hidden))
-        pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
 
         logits = self.output_layer(pred_hidden)
         return logits
