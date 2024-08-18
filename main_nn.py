@@ -44,12 +44,15 @@ def get_policy(cfg, ):
     policy = policy_constructor(**policy_dict, model=model)
     return policy, policy_dict['model_dir']
 
-def eval_policy(policy, dataloader):
+def eval_policy(cfg, policy, dataloader):
     hits = 0
     total = 0
     for i, batch in enumerate(dataloader):
         inputs, ests, labels = batch
-        preds = policy.predict(inputs, ests)
+        if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
+            preds = policy.predict(inputs, labels.float())
+        else:
+            preds = policy.predict(inputs, ests)
         hits += sum(labels.view(-1) == preds.view(-1))
         total += preds.size(0)
     acc = hits/total
@@ -77,7 +80,7 @@ def main(cfg):
                     shuffle=False,
                     collate_fn=data.collate_fn,
                 )
-        acc = eval_policy(policy, dataloader)
+        acc = eval_policy(cfg, policy, dataloader)
         print(f"{split_type} accuracy: {acc}")
 
 if __name__ == "__main__":

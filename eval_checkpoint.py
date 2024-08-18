@@ -43,6 +43,10 @@ def eval_model(cfg, model, dataloader):
             logits = model(inputs)
             probs.append(torch.sigmoid(logits.detach()))
             preds = (logits > 0).int()
+        elif cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
+            logits = model(inputs, labels.float())
+            probs.append(torch.sigmoid(logits.detach()))
+            preds = (logits > 0).int()
         hits += sum(labels.view(-1) == preds.view(-1))
         total += preds.size(0)
     probs = torch.cat(probs, dim=0)
@@ -71,7 +75,11 @@ def main(cfg):
     # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_15-45-21"
     # epoch = 2
     model_constructor = worker_agg.__dict__[cfg.neural_net.name]
-    if cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork']:
+    if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
+        num_workers = len(cfg.data_loader.params.evidence_llm)
+        model = model_constructor(**cfg.neural_net.params,
+                                    num_workers=1)
+    elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
                                     num_workers=num_workers)

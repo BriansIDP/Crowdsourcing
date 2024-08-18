@@ -94,8 +94,8 @@ class CombinedModel(nn.Module):
         )
         insizes = attention_mask.sum(dim=-1) - 1
         pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
-        # dropout
-        pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
+        # # dropout
+        # pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
 
         # Concatenate the estimated values
         pred_hidden = torch.cat([pred_hidden, ests], dim=-1)
