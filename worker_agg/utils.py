@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from transformers import get_scheduler
 from sklearn.metrics import roc_curve, auc
 import copy
 
@@ -156,5 +157,109 @@ def train_neural_net(neural_net, x_train: torch.Tensor, y_train: torch.Tensor,
         stats_dict["val_losses"] = val_losses
         if loss_fn_type == 'bce':
             stats_dict["train_accs"] = train_accs
+            stats_dict["val_accs"] = val_accs
+    return neural_net, stats_dict
+
+# Prepare the Training Function
+def train_neural_net_with_loaders(neural_net, train_loader, val_loader,
+                     lr: float=0.001, weight_decay: float=1e-5, patience: int=20,
+                     epochs: int=10, testing: bool=False, loss_fn_type: str='bce',
+                     print_every: int=10, num_warmup_steps: int=0,
+                     lr_scheduler_type: str='constant'):
+    if loss_fn_type == 'bce':
+        criterion = nn.BCEWithLogitsLoss()
+    elif loss_fn_type == 'mse':
+        criterion = nn.MSELoss()
+    else:
+        raise ValueError("Invalid loss function type")
+    optimizer = optim.Adam(neural_net.parameters(), lr=lr, weight_decay=weight_decay)
+
+    # Scheduler and math around the number of training steps.
+    num_update_steps_per_epoch = len(train_loader)
+    max_train_steps = epochs * num_update_steps_per_epoch
+    num_warmup_steps = num_warmup_steps * max_train_steps
+
+    lr_scheduler = get_scheduler(
+        name=lr_scheduler_type,
+        optimizer=optimizer,
+        num_warmup_steps=num_warmup_steps,
+        num_training_steps=max_train_steps,
+    )
+
+    # Training loop
+    best_loss=np.inf
+    val_losses = []
+    val_accs = []
+    optimizer.zero_grad()
+    for epoch in range(epochs):
+        neural_net.train()
+        for batch_idx, (x_train, y_train) in enumerate(train_loader):
+            # Forward pass
+            outputs = neural_net(x_train)
+            loss = criterion(outputs, y_train)
+
+            # Backward pass and optimization
+            loss.backward()
+            optimizer.step()
+            current_lr = optimizer.param_groups[0]['lr']
+            lr_scheduler.step()
+            optimizer.zero_grad()
+
+            if batch_idx % print_every == 0:
+                print(f"Epoch {epoch} (0-idxed), Batch {batch_idx} (0-idxed), Loss: {loss.item()}, LR: {current_lr:.6f}")
+
+        # Validation
+        neural_net.eval()
+        with torch.no_grad():
+            loss_val = 0
+            total_samples = 0
+            hits = 0
+            for batch_idx, (x_val, y_val) in enumerate(val_loader):
+                test_outputs = neural_net(x_val)
+                loss_val += criterion(test_outputs, y_val).item()*len(y_val)
+                total_samples += len(y_val)
+                if loss_fn_type == 'bce':
+                    hits += ((test_outputs > 0).float() == y_val).float().sum().item()
+            val_acc = hits/total_samples
+            loss_val /= total_samples
+            val_accs.append(val_acc)
+            val_losses.append(loss_val)
+            print(f"Epoch {epoch} (0-idxed), Validation Loss: {loss_val}, Validation Accuracy: {val_acc}")
+
+        # Early stopping
+        if loss_val < best_loss:
+            best_loss = loss_val
+            if loss_fn_type == 'bce':
+                best_acc = val_acc
+            best_neural_net_wts = copy.deepcopy(neural_net.state_dict())
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
+        if epochs_no_improve >= patience:
+            # print(f'Early stopping at epoch {epoch + 1}')
+            neural_net.load_state_dict(best_neural_net_wts)  # Load the best neural_net weights
+            break
+    
+    neural_net.eval() # Set the model to evaluation mode
+    epoch_min = np.argmin(val_losses)
+    best_val_loss = val_losses[epoch_min]
+    assert np.isclose(best_loss, best_val_loss)
+    if loss_fn_type == 'bce':
+        best_val_acc = val_accs[epoch_min]
+        assert np.isclose(best_acc, best_val_acc)
+    # with torch.no_grad():
+    #     probs_val = torch.sigmoid(neural_net(x_val)).flatten()
+    # fpr, tpr, _ = roc_curve(y_val.numpy(), probs_val.numpy())
+    # roc_auc = auc(fpr, tpr)
+    stats_dict = {
+        "best_val_loss": best_val_loss,
+        "epoch_min": epoch_min
+    }
+    if loss_fn_type == 'bce':
+        stats_dict["best_val_acc"] = val_accs[epoch_min]
+    if testing:
+        stats_dict["val_losses"] = val_losses
+        if loss_fn_type == 'bce':
             stats_dict["val_accs"] = val_accs
     return neural_net, stats_dict
