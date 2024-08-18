@@ -5,6 +5,7 @@ import pytz
 import hydra
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import worker_agg
 
@@ -35,6 +36,12 @@ def get_policy(cfg, ):
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
                                     num_workers=1)
+    elif cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='AvgSSLPredsSepLMs':
+        num_workers = len(cfg.data_loader.params.evidence_llm)
+        models = [model_constructor(**cfg.neural_net.params,
+                                    num_workers=num_workers-1) for _ in range(num_workers)]
+        policy = policy_constructor(**policy_dict, models=models)
+        return policy, policy_dict['model_dir']
     elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
@@ -47,7 +54,7 @@ def get_policy(cfg, ):
 def eval_policy(policy, dataloader):
     hits = 0
     total = 0
-    for i, batch in enumerate(dataloader):
+    for i, batch in enumerate(tqdm(dataloader)):
         inputs, ests, labels = batch
         preds = policy.predict(inputs, ests)
         hits += sum(labels.view(-1) == preds.view(-1))

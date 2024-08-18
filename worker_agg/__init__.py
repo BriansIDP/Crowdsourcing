@@ -2,6 +2,7 @@ from .binary_policies import EMSymmetricBinary, EMAsymmetricBinary, MajorityVote
 from .binary_policies import EMLogisticBinary, EMNeuralNetBinary, NeuralNetMajVote
 from .logit_policies import EMGaussian, EM_GMM, AvgSSLPreds, Averaging
 from .lm_policies import LMGroundTruth, LMMajVote, CrowdLayerLM, AvgSSLPredsLM
+from .lm_policies import AvgSSLPredsSepLMs
 from .data_loaders import HaluDialogueBinary, HaluQABinary, HaluDialogueLogit, HaluDialogueProb
 from .data_loaders import HaluDialBertPCA, HaluDialEmbed
 from .data_loaders import SynLogisticData, SynTwoLayerMLPData
