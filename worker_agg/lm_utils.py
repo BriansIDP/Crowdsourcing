@@ -245,7 +245,7 @@ class FinetuneLM:
             elif self.loss_fn_type == 'ce':
                 loss = self.criterion(preds, labels)
                 preds = torch.softmax(preds, dim=1)[:,1]
-            total_loss += loss.item() * inputs['input_ids'].size(0)
+            total_loss += loss.item() * labels.size(0)
             preds = (preds > 0.5).long() # labels are long
             hits += sum(labels.view(-1) == preds.view(-1))
             # total += preds.size(0)

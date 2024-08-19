@@ -12,3 +12,4 @@ main:
 
 eval:
   epoch: ${main.eval.epoch}
+  epochs: ${main.eval.epochs}

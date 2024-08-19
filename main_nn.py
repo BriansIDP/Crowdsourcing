@@ -41,6 +41,9 @@ def get_policy(cfg, ):
         models = [model_constructor(**cfg.neural_net.params,
                                     num_workers=num_workers-1) for _ in range(num_workers)]
         policy = policy_constructor(**policy_dict, models=models)
+        for i, model in enumerate(models):
+            model_dir = os.path.join(policy_dict['model_dir'], f"model_{i}")
+            os.makedirs(model_dir)
         return policy, policy_dict['model_dir']
     elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
         num_workers = len(cfg.data_loader.params.evidence_llm)

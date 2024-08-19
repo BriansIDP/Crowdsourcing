@@ -1,6 +1,7 @@
 import torch
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
+import os
 
 from .lm_utils import FinetuneLM
 
@@ -313,7 +314,7 @@ class AvgSSLPredsSepLMs:
             other_ids = [j for j in range(len(self.models)) if j!=i]
             ests = torch.stack(ests).to(self.device)
             other_ests = ests[:, other_ids].float()
-            curr_est = ests[:, i].long()
+            curr_est = ests[:, i:i+1].long()
             return (inputs, other_ests), curr_est
         return collate_fn
 
@@ -332,10 +333,12 @@ class AvgSSLPredsSepLMs:
                 shuffle=False,
                 collate_fn=self.create_collate_fn(i),
             )
+            # os.makedirs(policy_dict['model_dir'])
+            model_dir_i = os.path.join(self.model_dir, f"model_{i}")
             finetuner = FinetuneLM(model=self.models[i],
                                 train_dataloader=train_dataloader,
                                 val_dataloader=val_dataloader,
-                                model_dir=self.model_dir,
+                                model_dir=model_dir_i,
                                 lr=self.lr,
                                 weight_decay=self.weight_decay,
                                 gradient_accumulation_steps=self.gradient_accumulation_steps,
@@ -349,15 +352,17 @@ class AvgSSLPredsSepLMs:
     def predict(self, inputs, ests: torch.Tensor, testing: bool=False):
         ssl_preds = []
         for i in range(len(self.models)):
+            self.models[i].eval()
             other_ids = [j for j in range(len(self.models)) if j!=i]
             other_ests = ests[:, other_ids].float()
             if self.loss_fn_type == 'bce':
                 ssl_preds.append(torch.sigmoid(self.models[i]((inputs, other_ests))))
             elif self.loss_fn_type == 'mse':
-                ssl_preds.append(self.models[i]((inputs, other_ests)))
+                ssl_preds.append(self.models[i]((inputs, other_ests)).view(-1))
             else:
                 raise ValueError("loss_fn_type should be 'bce' or 'mse'")
-        ssl_preds = torch.stack(ssl_preds)
+        ssl_preds = torch.stack(ssl_preds).transpose(1, 0)
+        # print(ssl_preds.shape)
         preds = torch.mean(ssl_preds, dim=1)
         labels = (preds>0.5).int().detach()
         if not testing:

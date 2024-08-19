@@ -1,6 +1,7 @@
 import os
 
 from transformers import AutoTokenizer
+from torch.nn.utils.rnn import pad_sequence
 import hydra
 import torch
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -29,8 +30,10 @@ def eval_model(cfg, model, dataloader):
     # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
     #     with record_function("model_inference"):
     probs = []
+    all_labels = []
     for i, batch in enumerate(tqdm(dataloader)):
         inputs, ests, labels = batch
+        all_labels.append(labels.detach())
         if cfg.neural_net.name in ['PEWNetwork']:
             preds = model(inputs, ests, predict_gt=True)
             probs.append(preds.detach())
@@ -47,13 +50,51 @@ def eval_model(cfg, model, dataloader):
             logits = model(inputs, labels.float())
             probs.append(torch.sigmoid(logits.detach()))
             preds = (logits > 0).int()
+        elif cfg.neural_net.name=='CombinedModel':
+            logits = model((inputs, ests))
+            probs.append(torch.sigmoid(logits.detach()))
+            preds = (logits > 0).int()
         hits += sum(labels.view(-1) == preds.view(-1))
         total += preds.size(0)
     probs = torch.cat(probs, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
 
     # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
     acc = hits / total
-    return acc, probs
+    return acc, probs, all_labels
+
+# def eval_policy(cfg, policy, dataloader):
+#     hits = 0
+#     total = 0
+#     probs = []
+#     for i, batch in enumerate(tqdm(dataloader)):
+#         inputs, ests, labels = batch
+#         if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
+#             preds = policy.predict(inputs, labels.float())
+#         else:
+#             preds, _probs, _ = policy.predict(inputs, ests, testing=True)
+#             probs.append(_probs.detach().cpu().numpy())
+#         hits += sum(labels.view(-1) == preds.view(-1))
+#         total += preds.size(0)
+#     acc = hits/total
+#     probs = np.concatenate(probs, axis=0)
+#     return acc, probs
+
+
+def create_collate_fn(i: int, num_workers: int):
+    def collate_fn(batch):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        input_ids, ests, labels = zip(*batch)
+        labels = torch.tensor([l.item() for l in labels]).to(device).long()
+        input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(device)
+        attn_mask = input_ids != 0
+        inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
+        other_ids = [j for j in range(num_workers) if j!=i]
+        ests = torch.stack(ests).to(device)
+        other_ests = ests[:, other_ids].float()
+        # curr_est = ests[:, i:i+1].long()
+        return inputs, other_ests, labels
+    return collate_fn
 
 def load_checkpoint(model, model_dir, epoch):
     fulloutput = os.path.join(model_dir, "checkpoint.{}".format(epoch))
@@ -74,35 +115,74 @@ def main(cfg):
     # epoch = 4
     # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_15-45-21"
     # epoch = 2
+    # model_constructor = worker_agg.__dict__[cfg.neural_net.name]
+    # if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
+    #     num_workers = len(cfg.data_loader.params.evidence_llm)
+    #     model = model_constructor(**cfg.neural_net.params,
+    #                                 num_workers=1)
+    # elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
+    #     num_workers = len(cfg.data_loader.params.evidence_llm)
+    #     model = model_constructor(**cfg.neural_net.params,
+    #                                 num_workers=num_workers)
+    # else:
+    #     model = model_constructor(**cfg.neural_net.params)
+    # model_dir = cfg.policy.params.model_dir
+    # epoch = cfg.eval.epoch
+    # load_checkpoint(model, model_dir, epoch)
+    # model.eval()
+    # probs_com = []
+    # for split_type in ['train', 'val']:
+    #     data = get_data(cfg, split_type=split_type, with_gt=True)
+    #     dataloader = DataLoader(
+    #                 data,
+    #                 batch_size=cfg.policy.params.batch_size,
+    #                 shuffle=False,
+    #                 collate_fn=data.collate_fn,
+    #             )
+    #     acc, probs = eval_model(cfg, model, dataloader)
+    #     probs_com.append(probs)
+    #     print(f"{split_type} accuracy: {acc}")
+    # probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
+    # np.save(f"{model_dir}/probs.npy", probs_com)
+
+    policy_constructor = worker_agg.__dict__[cfg.policy.name]
     model_constructor = worker_agg.__dict__[cfg.neural_net.name]
-    if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
-        num_workers = len(cfg.data_loader.params.evidence_llm)
-        model = model_constructor(**cfg.neural_net.params,
-                                    num_workers=1)
-    elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
-        num_workers = len(cfg.data_loader.params.evidence_llm)
-        model = model_constructor(**cfg.neural_net.params,
-                                    num_workers=num_workers)
-    else:
-        model = model_constructor(**cfg.neural_net.params)
+    num_workers = len(cfg.data_loader.params.evidence_llm)
     model_dir = cfg.policy.params.model_dir
-    epoch = cfg.eval.epoch
-    load_checkpoint(model, model_dir, epoch)
-    model.eval()
+    epochs = cfg.eval.epochs
     probs_com = []
-    for split_type in ['train', 'val']:
+    for split_type in ['train','val']:
+        probs = []
         data = get_data(cfg, split_type=split_type, with_gt=True)
-        dataloader = DataLoader(
-                    data,
-                    batch_size=cfg.policy.params.batch_size,
-                    shuffle=False,
-                    collate_fn=data.collate_fn,
-                )
-        acc, probs = eval_model(cfg, model, dataloader)
-        probs_com.append(probs)
+        for i in range(num_workers):
+            model = model_constructor(**cfg.neural_net.params, num_workers=num_workers-1)
+            model_dir_i = os.path.join(model_dir, f"model_{i}")
+            load_checkpoint(model, model_dir_i, epochs[i])
+            dataloader = DataLoader(
+                        data,
+                        batch_size=cfg.policy.params.batch_size,
+                        shuffle=False,
+                        collate_fn=create_collate_fn(i, num_workers),
+                    )
+            acc_i, probs_i, all_labels = eval_model(cfg, model, dataloader)
+            print(probs_i.shape)
+            print(f"{split_type} accuracy model {i}: {acc_i}")
+            probs.append(probs_i.cpu().detach().numpy())
+        probs = np.concatenate(probs, axis=1)
+        print(probs.shape)
+        probs = np.mean(probs, axis=1)
+        probs_com += probs.tolist()
+        pred_labels = (probs > 0.5).astype(int)
+        acc = np.mean(pred_labels == all_labels.cpu().numpy())
         print(f"{split_type} accuracy: {acc}")
-    probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
     np.save(f"{model_dir}/probs.npy", probs_com)
+    # policy = policy_constructor(**cfg.policy.params, models=models)
+    # probs_com = []
+    #     acc, probs = eval_policy(cfg, policy, dataloader)
+    #     probs_com.append(probs)
+    #     print(f"{split_type} accuracy: {acc}")
+    # probs_com = np.concatenate(probs_com, axis=0)
+    # np.save(f"{model_dir}/probs.npy", probs_com)
 
 if __name__ == "__main__":
     main()

@@ -81,6 +81,7 @@ class CombinedModel(nn.Module):
             std = gain / fan ** 0.5
             self.dense.weight.data = torch.normal(0, std, size=self.dense.weight.shape, 
                                                          generator=generator).to(self.device)
+        nn.init.zeros_(self.dense.bias)
         with torch.no_grad():
             fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
             gain = 1.0
