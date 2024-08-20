@@ -415,7 +415,7 @@ class PEWNetwork(nn.Module):
                 preds = torch.cat((preds, -preds), dim=1)
             else:
                 # convert to probabilities
-                preds = torch.sigmoid(preds)
+                preds = torch.sigmoid(-preds) # -preds because we want the other class
                 # avg over workers
                 preds = torch.mean(preds, dim=1)
         elif self.loss_fn_type == 'mse' and predict_gt:

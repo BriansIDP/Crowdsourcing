@@ -107,81 +107,66 @@ def load_checkpoint(model, model_dir, epoch):
 
 @hydra.main(version_base=None, config_path="./conf", config_name="config")
 def main(cfg):
-    # model = LMplusOneLayer(
-    #     model_path="gpt2",
-    #     seed=69420,
-    # )
-    # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_21-29-32"
-    # epoch = 4
-    # model_dir = "/home/akagr/Crowdsourcing-1/exp/lm_gt/2024-08-12_15-45-21"
-    # epoch = 2
-    # model_constructor = worker_agg.__dict__[cfg.neural_net.name]
-    # if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
-    #     num_workers = len(cfg.data_loader.params.evidence_llm)
-    #     model = model_constructor(**cfg.neural_net.params,
-    #                                 num_workers=1)
-    # elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
-    #     num_workers = len(cfg.data_loader.params.evidence_llm)
-    #     model = model_constructor(**cfg.neural_net.params,
-    #                                 num_workers=num_workers)
-    # else:
-    #     model = model_constructor(**cfg.neural_net.params)
-    # model_dir = cfg.policy.params.model_dir
-    # epoch = cfg.eval.epoch
-    # load_checkpoint(model, model_dir, epoch)
-    # model.eval()
-    # probs_com = []
-    # for split_type in ['train', 'val']:
-    #     data = get_data(cfg, split_type=split_type, with_gt=True)
-    #     dataloader = DataLoader(
-    #                 data,
-    #                 batch_size=cfg.policy.params.batch_size,
-    #                 shuffle=False,
-    #                 collate_fn=data.collate_fn,
-    #             )
-    #     acc, probs = eval_model(cfg, model, dataloader)
-    #     probs_com.append(probs)
-    #     print(f"{split_type} accuracy: {acc}")
-    # probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
-    # np.save(f"{model_dir}/probs.npy", probs_com)
-
-    policy_constructor = worker_agg.__dict__[cfg.policy.name]
     model_constructor = worker_agg.__dict__[cfg.neural_net.name]
-    num_workers = len(cfg.data_loader.params.evidence_llm)
+    if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
+        num_workers = len(cfg.data_loader.params.evidence_llm)
+        model = model_constructor(**cfg.neural_net.params,
+                                    num_workers=1)
+    elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
+        num_workers = len(cfg.data_loader.params.evidence_llm)
+        model = model_constructor(**cfg.neural_net.params,
+                                    num_workers=num_workers)
+    else:
+        model = model_constructor(**cfg.neural_net.params)
     model_dir = cfg.policy.params.model_dir
-    epochs = cfg.eval.epochs
+    epoch = cfg.eval.epoch
+    load_checkpoint(model, model_dir, epoch)
+    model.eval()
     probs_com = []
-    for split_type in ['train','val']:
-        probs = []
+    for split_type in ['val', 'train']:
         data = get_data(cfg, split_type=split_type, with_gt=True)
-        for i in range(num_workers):
-            model = model_constructor(**cfg.neural_net.params, num_workers=num_workers-1)
-            model_dir_i = os.path.join(model_dir, f"model_{i}")
-            load_checkpoint(model, model_dir_i, epochs[i])
-            dataloader = DataLoader(
-                        data,
-                        batch_size=cfg.policy.params.batch_size,
-                        shuffle=False,
-                        collate_fn=create_collate_fn(i, num_workers),
-                    )
-            acc_i, probs_i, all_labels = eval_model(cfg, model, dataloader)
-            print(probs_i.shape)
-            print(f"{split_type} accuracy model {i}: {acc_i}")
-            probs.append(probs_i.cpu().detach().numpy())
-        probs = np.concatenate(probs, axis=1)
-        print(probs.shape)
-        probs = np.mean(probs, axis=1)
-        probs_com += probs.tolist()
-        pred_labels = (probs > 0.5).astype(int)
-        acc = np.mean(pred_labels == all_labels.cpu().numpy())
+        dataloader = DataLoader(
+                    data,
+                    batch_size=cfg.policy.params.batch_size,
+                    shuffle=False,
+                    collate_fn=data.collate_fn,
+                )
+        acc, probs, _ = eval_model(cfg, model, dataloader)
+        probs_com.append(probs)
         print(f"{split_type} accuracy: {acc}")
+    probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
     np.save(f"{model_dir}/probs.npy", probs_com)
-    # policy = policy_constructor(**cfg.policy.params, models=models)
+
+    # policy_constructor = worker_agg.__dict__[cfg.policy.name]
+    # model_constructor = worker_agg.__dict__[cfg.neural_net.name]
+    # num_workers = len(cfg.data_loader.params.evidence_llm)
+    # model_dir = cfg.policy.params.model_dir
+    # epochs = cfg.eval.epochs
     # probs_com = []
-    #     acc, probs = eval_policy(cfg, policy, dataloader)
-    #     probs_com.append(probs)
+    # for split_type in ['train','val']:
+    #     probs = []
+    #     data = get_data(cfg, split_type=split_type, with_gt=True)
+    #     for i in range(num_workers):
+    #         model = model_constructor(**cfg.neural_net.params, num_workers=num_workers-1)
+    #         model_dir_i = os.path.join(model_dir, f"model_{i}")
+    #         load_checkpoint(model, model_dir_i, epochs[i])
+    #         dataloader = DataLoader(
+    #                     data,
+    #                     batch_size=cfg.policy.params.batch_size,
+    #                     shuffle=False,
+    #                     collate_fn=create_collate_fn(i, num_workers),
+    #                 )
+    #         acc_i, probs_i, all_labels = eval_model(cfg, model, dataloader)
+    #         print(probs_i.shape)
+    #         print(f"{split_type} accuracy model {i}: {acc_i}")
+    #         probs.append(probs_i.cpu().detach().numpy())
+    #     probs = np.concatenate(probs, axis=1)
+    #     print(probs.shape)
+    #     probs = np.mean(probs, axis=1)
+    #     probs_com += probs.tolist()
+    #     pred_labels = (probs > 0.5).astype(int)
+    #     acc = np.mean(pred_labels == all_labels.cpu().numpy())
     #     print(f"{split_type} accuracy: {acc}")
-    # probs_com = np.concatenate(probs_com, axis=0)
     # np.save(f"{model_dir}/probs.npy", probs_com)
 
 if __name__ == "__main__":
