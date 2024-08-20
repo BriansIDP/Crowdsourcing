@@ -1,2 +1,3 @@
 name: Averaging
-params: {}
+params:
+  apply_sigmoid: False

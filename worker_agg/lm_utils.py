@@ -85,6 +85,8 @@ class LMplusOneLayer(nn.Module):
         )
         insizes = attention_mask.sum(dim=-1) - 1
         pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
+        # layer norm
+        pred_hidden = self.llm.transformer.ln_f(pred_hidden)
 
         # Apply deterministic dropout
         if self.training:
@@ -497,10 +499,6 @@ class CrowdLayerNN(nn.Module):
                                                          generator=generator).to(self.device)       
         nn.init.zeros_(self.output_layer.bias)
 
-        # # make crowd layer weights all 1
-        # for i in range(self.num_workers):
-        #     nn.init.ones_(getattr(self, "crowd_{}".format(i+1)).weight)
-
         # crowd layer weights should be identity
         for i in range(self.num_workers):
             nn.init.eye_(getattr(self, "crowd_{}".format(i+1)).weight)
@@ -518,6 +516,8 @@ class CrowdLayerNN(nn.Module):
         )
         insizes = attention_mask.sum(dim=-1) - 1
         pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
+        # apply layer norm
+        pred_hidden = self.llm.transformer.ln_f(pred_hidden)
 
         # Apply deterministic dropout
         if self.training:

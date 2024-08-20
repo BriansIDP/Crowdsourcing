@@ -306,13 +306,22 @@ class AvgSSLPreds:
 
 class Averaging:
     def __init__(self,
-            num_workers: int,):
+            num_workers: int,
+            apply_sigmoid: bool=False) -> None:
         self.num_workers = num_workers
+        self.apply_sigmoid = apply_sigmoid
+        print(f"apply_sigmoid: {apply_sigmoid}")
     
     def fit(self, estimates: np.ndarray) -> None:
         pass
 
     def predict(self, estimates: np.ndarray) -> np.ndarray:
+        if self.apply_sigmoid:
+            sigmoid = lambda x: 1/(1+np.exp(-x))
+            estimates = sigmoid(estimates)
         group_ests = np.mean(estimates, axis=1)
-        labels = np.array(group_ests > 0, dtype=np.int32)
+        if self.apply_sigmoid:
+            labels = np.array(group_ests > 0.5, dtype=np.int32)
+        else:
+            labels = np.array(group_ests > 0, dtype=np.int32)
         return labels
