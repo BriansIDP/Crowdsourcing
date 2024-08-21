@@ -3,7 +3,6 @@ import math
 import time
 from collections import OrderedDict
 from typing import Dict
-import copy
 
 import numpy as np
 import torch
@@ -285,144 +284,6 @@ class FinetuneLM:
         self.model.tokenizer.save_pretrained(fulloutput)
         return checkpoint
     
-class PEWNetwork(nn.Module):
-    def __init__(
-        self,
-        num_workers: int,
-        model_path: str,
-        seed: int,
-        hidden_size_ow: int = 100,
-        dropout_prob: float = 0.1,
-        cache_dir: str = "scratch/cache",
-        n_unfreeze: int = 0,
-        loss_fn_type: str = 'mse',
-    ):
-        super(PEWNetwork, self).__init__()
-        
-        assert seed is not None, "Please provide a seed for reproducibility"
-        self.seed = seed
-        self.num_workers = num_workers
-        self.dropout_prob = dropout_prob
-        assert loss_fn_type in ['mse','ce'], "Loss function type must be either 'mse' or 'ce'"
-        self.loss_fn_type = loss_fn_type
-
-        # Determine device: use CUDA if available
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-        # Load the pre-trained language model and move to the correct device
-        self.llm = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            cache_dir=cache_dir
-        ).to(self.device)
-        self.n_unfreeze = n_unfreeze
-        for param in self.llm.parameters():
-            param.requires_grad = False
-
-        # Separate the frozen and unfrozen parts
-        self.frozen_part = self.llm.transformer.h[:-n_unfreeze]
-        self.unfrozen_part = self.llm.transformer.h[-n_unfreeze:]
-
-        self.hidden_size_ow = hidden_size_ow
-        for i in range(self.num_workers):
-            setattr(self, f"lm_unfrozen_{i+1}", copy.deepcopy(self.unfrozen_part).to(self.device))
-            setattr(self, f"ow_l1_{i+1}", nn.Linear(num_workers-1, hidden_size_ow).to(self.device))
-            setattr(self, f"ow_l2_{i+1}", nn.Linear(self.llm.config.hidden_size + hidden_size_ow, 1).to(self.device))
-
-        # Initialize weights
-        self._initialize_weights()
-
-        # Load the tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-
-    def _initialize_weights(self):
-        generator = torch.Generator()  # Ensure generator is on the correct device
-        generator.manual_seed(self.seed)
-        # Manually generate random numbers and apply kaiming initialization
-        for i in range(self.num_workers):
-            with torch.no_grad():
-                fan = nn.init._calculate_correct_fan(getattr(self, f"ow_l1_{i+1}").weight, 'fan_in')
-                gain = nn.init.calculate_gain('relu')
-                std = gain / fan ** 0.5
-                getattr(self, f"ow_l1_{i+1}").weight.data = \
-                    torch.normal(0, std, size=getattr(self, f"ow_l1_{i+1}").weight.shape, 
-                                                                            generator=generator).to(self.device)       
-            nn.init.zeros_(getattr(self, f"ow_l1_{i+1}").bias)
-            with torch.no_grad():
-                fan = nn.init._calculate_correct_fan(getattr(self, f"ow_l2_{i+1}").weight, 'fan_in')
-                gain = 1.0
-                std = gain / fan ** 0.5
-                getattr(self, f"ow_l2_{i+1}").weight.data = \
-                    torch.normal(0, std, size=getattr(self, f"ow_l2_{i+1}").weight.shape, 
-                                                                            generator=generator).to(self.device)
-
-    def forward(self, 
-                inputs: Dict[str, torch.Tensor],
-                ests: torch.tensor,
-                predict_gt: bool=False) -> torch.Tensor:
-        # Ensure inputs are on the correct device
-        attention_mask = inputs["attention_mask"].to(self.device)
-        input_ids = inputs["input_ids"].to(self.device)
-        # Check the shapes of input_ids and attention_mask
-        assert input_ids.shape == attention_mask.shape, \
-            f"input_ids shape {input_ids.shape} does not match attention_mask shape {attention_mask.shape}"
-        # Get token embeddings (wte) and positional embeddings (wpe)
-        token_embeddings = self.llm.transformer.wte(input_ids)  # Word/Token Embeddings
-        position_ids = torch.arange(input_ids.size(-1), dtype=torch.long, device=self.device).unsqueeze(0)
-        position_embeddings = self.llm.transformer.wpe(position_ids)  # Positional Embeddings
-        # Combine token and positional embeddings
-        hidden_states = token_embeddings + position_embeddings
-        # ChatGPT says applying dropout is standard practice even though this is from the frozen part
-        hidden_states = self.llm.transformer.drop(hidden_states)
-
-        # Prepare attention mask for transformer blocks
-        # See forward function in transformers.models.gpt2.modeling_gpt2.GPT2Model
-        # specifically, lines 815 and 823
-        # TODO: this might not work for all models
-        ext_attention_mask = attention_mask[:, None, None, :].to(device=self.device).float()
-        ext_attention_mask = (1.0 - ext_attention_mask) * torch.finfo(ext_attention_mask.dtype).min
-
-        for layer in self.frozen_part:
-            hidden_states = layer(hidden_states, attention_mask=ext_attention_mask)[0]
-
-        preds = []
-        for i in range(self.num_workers):
-            branch_hidden_states = hidden_states.clone()
-            for layer in getattr(self, f"lm_unfrozen_{i+1}"):
-                branch_hidden_states = layer(branch_hidden_states, attention_mask=ext_attention_mask)[0]
-            # apply layer norm -- see forward function in transformers.models.gpt2.modeling_gpt2.GPT2Model
-            branch_hidden_states = self.llm.transformer.ln_f(branch_hidden_states)
-
-            # Extract the hidden states at the positions specified by 'insizes'
-            insizes = attention_mask.sum(dim=-1) - 1
-            pred_hidden = branch_hidden_states[torch.arange(insizes.size(0)), insizes]
-            # copy_outputs.append(pred_hidden)
-
-            other_ids = torch.arange(self.num_workers)[torch.arange(self.num_workers) != i]
-            ow_ests = ests[:,other_ids].clone().float()
-            ow_op = getattr(self, f"ow_l1_{i+1}")(ow_ests)
-            ow_op = torch.relu(ow_op)
-            # apply dropout
-            ow_op = nn.functional.dropout(ow_op, p=self.dropout_prob, training=self.training)
-            pred_hidden = torch.cat((pred_hidden, ow_op), dim=1)
-            pred_hidden = getattr(self, f"ow_l2_{i+1}")(pred_hidden)
-            preds.append(pred_hidden)
-        preds = torch.cat(preds, dim=1)
-        if self.loss_fn_type == 'ce':
-            # need preds to be of shape (batch_size, 2, num_workers)
-            # concatenate preds with -preds
-            if not predict_gt:
-                preds = preds.unsqueeze(1)
-                preds = torch.cat((preds, -preds), dim=1)
-            else:
-                # convert to probabilities
-                preds = torch.sigmoid(-preds) # -preds because we want the other class
-                # avg over workers
-                preds = torch.mean(preds, dim=1)
-        elif self.loss_fn_type == 'mse' and predict_gt:
-            # preds are probabilities already
-            preds = torch.mean(preds, dim=1)
-        return preds
-
 class CrowdLayerNN(nn.Module):
     def __init__(
         self,
@@ -541,3 +402,115 @@ class CrowdLayerNN(nn.Module):
         crowd_acts = torch.stack(crowd_acts, dim=1)
         crowd_acts = crowd_acts.transpose(-1, -2)
         return crowd_acts
+
+class CombinedModel(nn.Module):
+    def __init__(
+        self,
+        model_path: str,
+        seed: int,
+        num_workers: int,
+        hidden_size: int, 
+        dropout_prob: float = 0.1,
+        cache_dir: str = "scratch/cache",
+        no_freeze_lm: bool = True,
+        n_unfreeze: int = 0,
+    ):
+        super().__init__()
+        
+        assert seed is not None, "Please provide a seed for reproducibility"
+        self.seed = seed
+        self.dropout_prob = dropout_prob
+        self.num_workers = num_workers
+
+        # Determine device: use CUDA if available
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Load the pre-trained language model and move to the correct device
+        self.llm = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            cache_dir=cache_dir
+        ).to(self.device)
+        self.no_freeze_lm = no_freeze_lm
+        self.n_unfreeze = n_unfreeze
+        if not no_freeze_lm:
+            for name, param in self.llm.named_parameters():
+                param.requires_grad = False
+            # Unfreeze the last n layers of GPT-2
+            if n_unfreeze > 0:
+                for layer in self.llm.transformer.h[-n_unfreeze:]:
+                    for param in layer.parameters():
+                        param.requires_grad = True
+            else:
+                pass # no unfreezing
+        else:
+            # no freezing
+            pass
+
+        # Initialize additional layers and move them to the correct device
+        self.hidden_size = hidden_size
+        self.dense = nn.Linear(num_workers, hidden_size).to(self.device)
+        # self.com_layer = nn.Linear(self.llm.config.hidden_size + num_workers, hidden_size).to(self.device)
+        # self.output_layer = nn.Linear(hidden_size, 1).to(self.device)
+        self.output_layer = nn.Linear(self.llm.config.hidden_size + hidden_size, 1).to(self.device)
+
+        # Initialize weights
+        self._initialize_weights()
+
+        # Load the tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    def _initialize_weights(self):
+        generator = torch.Generator()  # Ensure generator is on the correct device
+        generator.manual_seed(self.seed)
+        # Manually generate random numbers and apply kaiming initialization
+        # with torch.no_grad():
+        #     fan = nn.init._calculate_correct_fan(self.com_layer.weight, 'fan_in')
+        #     gain = nn.init.calculate_gain('relu')
+        #     std = gain / fan ** 0.5
+        #     self.com_layer.weight.data = torch.normal(0, std, size=self.com_layer.weight.shape, 
+        #                                                  generator=generator).to(self.device)       
+        # nn.init.zeros_(self.com_layer.bias)
+        with torch.no_grad():
+            fan = nn.init._calculate_correct_fan(self.dense.weight, 'fan_in')
+            gain = nn.init.calculate_gain('relu')
+            std = gain / fan ** 0.5
+            self.dense.weight.data = torch.normal(0, std, size=self.dense.weight.shape, 
+                                                         generator=generator).to(self.device)
+        nn.init.zeros_(self.dense.bias)
+        with torch.no_grad():
+            fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
+            gain = 1.0
+            std = gain / fan ** 0.5
+            self.output_layer.weight.data = torch.normal(0, std, size=self.output_layer.weight.shape, 
+                                                         generator=generator).to(self.device)
+        nn.init.zeros_(self.output_layer.bias)
+
+    def forward(self, inputs):
+                # inputs: Dict[str, torch.Tensor],
+                # ests: torch.Tensor,):
+        # Ensure inputs are on the correct device
+        inputs, ests = inputs
+        attention_mask = inputs["attention_mask"].to(self.device)
+        outputs = self.llm(
+            input_ids=inputs["input_ids"].to(self.device),
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+            return_dict=True,
+        )
+        insizes = attention_mask.sum(dim=-1) - 1
+        pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
+        # dropout
+        # pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
+
+        # # Concatenate the estimated values
+        # pred_hidden = torch.cat([pred_hidden, ests], dim=-1)
+        # pred_hidden = torch.relu(self.com_layer(pred_hidden))
+        # pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
+
+        ests = self.dense(ests)
+        ests = torch.relu(ests)
+        ests = torch.dropout(ests, p=self.dropout_prob, train=self.training)
+        pred_hidden = torch.cat([pred_hidden, ests], dim=-1)
+
+        logits = self.output_layer(pred_hidden)
+        return logits

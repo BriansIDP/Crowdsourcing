@@ -1,6 +1,6 @@
-name: PEWNoSSL
+name: PEWNoSSLSepLMs
 params:
-  model_dir: 'exp/pew_no_ssl'
+  model_dir: 'exp/pew_no_ssl_sep_lms'
   lr: 1e-4
   weight_decay: 0.0
   gradient_accumulation_steps: 1

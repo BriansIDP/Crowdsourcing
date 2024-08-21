@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader
 import os
 
 from .lm_utils import FinetuneLM
+from .multihead_utils import FinetuneMultiHeadNet
 
 class LMGroundTruth:
     def __init__(self, model,
@@ -207,6 +208,7 @@ class CrowdLayerLM:
 class AvgSSLPredsLM:
     def __init__(self, model,
                  model_dir: str,
+                 num_workers: int,
                  lr: float=0.001,
                  weight_decay: float=1e-5, 
                  gradient_accumulation_steps: int=1, 
@@ -217,7 +219,7 @@ class AvgSSLPredsLM:
                  batch_size: int=16,
                  ) -> None:
         self.model = model
-        # self.num_workers = num_workers
+        self.num_workers = num_workers
         self.model_dir = model_dir
         self.lr = lr
         self.weight_decay = weight_decay
@@ -235,7 +237,7 @@ class AvgSSLPredsLM:
         attn_mask = input_ids != 0
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
         ests = torch.stack(ests).to(self.device).long()
-        return inputs, ests
+        return (inputs, ests)
 
     def fit(self, train_data, val_data):
         train_dataloader = DataLoader(
@@ -250,7 +252,8 @@ class AvgSSLPredsLM:
             shuffle=False,
             collate_fn=self.collate_fn,
         )
-        finetuner = FinetuneLM(model=self.model,
+        finetuner = FinetuneMultiHeadNet(model=self.model,
+                                num_workers=self.num_workers,
                                train_dataloader=train_dataloader,
                                val_dataloader=val_dataloader,
                                model_dir=self.model_dir,
@@ -261,8 +264,7 @@ class AvgSSLPredsLM:
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
-                               loss_fn_type=self.model.loss_fn_type,
-                               need_ests=True)
+                               loss_fn_type=self.model.loss_fn_type,)
         finetuner.run()
 
     def predict(self, inputs, ests: torch.Tensor,

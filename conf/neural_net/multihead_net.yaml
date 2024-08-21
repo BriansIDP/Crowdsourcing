@@ -1,4 +1,4 @@
-name: PEWNetwork
+name: MultiHeadNet
 params:
   seed: 69420
   model_path: "gpt2"
@@ -6,4 +6,5 @@ params:
   cache_dir: "scratch/cache"
   n_unfreeze: 2
   hidden_size_ow: 100
-  loss_fn_type: "mse"
+  loss_fn_type: "bce"
+  do_ssl: True
