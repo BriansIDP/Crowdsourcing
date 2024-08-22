@@ -1,0 +1,8 @@
+python main_nn.py policy=lm_crowd data_loader=halu_dial_bin_lm policy.params.weight_decay=1e-5 neural_net=crowdlayer_nn neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32 
+python eval_checkpoint.py policy=lm_crowd data_loader=halu_dial_bin_lm neural_net=crowdlayer_nn policy.params.model_dir="exp/crowd_lm/2024-08-15_20-55-08" eval.epoch=9 policy.params.batch_size=32
+
+python main_nn.py policy=avg_ssl_preds_lm data_loader=halu_dial_bin_lm policy.params.weight_decay=1e-5 neural_net=pew_nn neural_net.params.n_unfreeze=2 
+python eval_checkpoint.py policy=avg_ssl_preds_lm data_loader=halu_dial_bin_lm neural_net=pew_nn policy.params.model_dir="exp/pew_lm/2024-08-15_17-06-50" eval.epoch=9 policy.params.batch_size=512
+
+python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32
+python eval_checkpoint.py policy=lm_mv data_loader=halu_dial_bin_lm neural_net=lm_plus_one_layer policy.params.model_dir="exp/lm_mv/2024-08-15_23-11-35" eval.epoch=7 policy.params.batch_size=16

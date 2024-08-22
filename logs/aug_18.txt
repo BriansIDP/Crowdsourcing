@@ -1,0 +1,23 @@
+python main_nn.py policy=avg_ssl_preds_sep_lm data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=com_model neural_net.params.no_freeze_lm=False neural_net.params.hidden_size=128 neural_net.params.n_unfreeze=2 policy.params.batch_size=32 policy.params.num_train_epochs=5
+python eval_checkpoint.py policy=avg_ssl_preds_sep_lm data_loader=halu_dial_bin_lm data_loader.params.split=0.9 neural_net=com_model neural_net.params.hidden_size=128 policy.params.model_dir="exp/pew_sep_lm/2024-08-18_15-16-43" eval.epochs=[1,4,4,2,4] policy.params.batch_size=16
+
+python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32
+python main_nn.py policy=lm_crowd data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=crowdlayer_nn neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32
+
+####################################################################################################
+PEW 
+####################################################################################################
+python main_nn.py policy=avg_ssl_preds_lm data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.batch_size=32 policy.params.weight_decay=1e-5 neural_net=pew_nn neural_net.params.n_unfreeze=2 neural_net.params.loss_fn_type='ce' neural_net.params.hidden_size_ow=128 
+python eval_checkpoint.py policy=avg_ssl_preds_lm data_loader=halu_dial_bin_lm data_loader.params.split=0.9 neural_net=pew_nn neural_net.params.loss_fn_type='ce' neural_net.params.hidden_size_ow=128 policy.params.model_dir="exp/pew_lm/2024-08-19_20-22-19" eval.epoch=9 policy.params.batch_size=32
+
+####################################################################################################
+lm_mv, lm_crowd after adding layer norm
+####################################################################################################
+-- rerunning because added layer norm
+python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=16 policy.params.gradient_accumulation_steps=2
+python main_nn.py policy=lm_crowd data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=crowdlayer_nn neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32
+
+####################################################################################################
+PEWNoSSL
+####################################################################################################
+python main_nn.py policy=pew_no_ssl data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32 policy.params.num_train_epochs=5

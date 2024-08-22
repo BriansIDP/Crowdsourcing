@@ -6,5 +6,5 @@ params:
   cache_dir: "scratch/cache"
   n_unfreeze: 2
   hidden_size_ow: 100
-  loss_fn_type: "bce"
+  loss_fn_type: "ce"
   do_ssl: True

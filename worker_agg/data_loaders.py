@@ -253,8 +253,10 @@ class HaluDialBinaryLM(Dataset):
             portion = int(len(self.data) * split)
             if self.evalmode:
                 self.data = self.data[portion:] if portion > 0 else self.data[:portion]
+                # self.data = self.data[portion:2*portion] 
             else:
                 self.data = self.data[:portion] if portion > 0 else self.data[portion:]
+                # self.data = self.data[:portion] 
         self.with_gt = with_gt
 
     def __len__(self):

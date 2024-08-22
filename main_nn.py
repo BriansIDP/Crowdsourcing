@@ -45,7 +45,7 @@ def get_policy(cfg, ):
             model_dir = os.path.join(policy_dict['model_dir'], f"model_{i}")
             os.makedirs(model_dir)
         return policy, policy_dict['model_dir']
-    elif cfg.neural_net.name=='LMplusOneLayer' and cfg.policy.name=='PEWNoSSL':
+    elif cfg.neural_net.name=='LMplusOneLayer' and cfg.policy.name=='PEWNoSSLSepLMs':
         num_workers = len(cfg.data_loader.params.evidence_llm)
         models = [model_constructor(**cfg.neural_net.params,) for _ in range(num_workers)]
         policy = policy_constructor(**policy_dict, models=models)
@@ -53,10 +53,13 @@ def get_policy(cfg, ):
             model_dir = os.path.join(policy_dict['model_dir'], f"model_{i}")
             os.makedirs(model_dir)
         return policy, policy_dict['model_dir']
-    elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
+    elif cfg.neural_net.name in ['CrowdLayerNN', 'MultiHeadNet', 'CombinedModel']:
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
                                     num_workers=num_workers)
+        if cfg.policy.name in ['AvgSSLPredsLM','PEWNoSSL']:
+            policy = policy_constructor(**policy_dict, model=model, num_workers=num_workers)
+            return policy, policy_dict['model_dir']
     else:
         model = model_constructor(**cfg.neural_net.params)
     policy = policy_constructor(**policy_dict, model=model)

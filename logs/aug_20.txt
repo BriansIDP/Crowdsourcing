@@ -1,0 +1,14 @@
+####################################################################################################
+PEW 
+####################################################################################################
+----5 workers----
+python main_nn.py policy=avg_ssl_preds_lm data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.batch_size=16 policy.params.weight_decay=1e-5 neural_net=multihead_net neural_net.params.n_unfreeze=2 neural_net.params.loss_fn_type='ce' neural_net.params.hidden_size_ow=128 
+python eval_checkpoint.py policy=avg_ssl_preds_lm data_loader=halu_dial_bin_lm data_loader.params.split=0.9 neural_net=multihead_net neural_net.params.loss_fn_type='ce' neural_net.params.hidden_size_ow=128 policy.params.model_dir="exp/pew_lm/2024-08-20_20-32-56" eval.epoch=6 policy.params.batch_size=16
+
+python main_nn.py policy=pew_no_ssl data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.batch_size=16 policy.params.weight_decay=1e-5 neural_net=multihead_net neural_net.params.n_unfreeze=2 neural_net.params.loss_fn_type='ce' neural_net.params.do_ssl=False
+
+
+----10 workers----
+python main_nn.py policy=avg_ssl_preds_lm data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.batch_size=16 policy.params.weight_decay=1e-5 neural_net=multihead_net neural_net.params.n_unfreeze=2 neural_net.params.loss_fn_type='ce' neural_net.params.hidden_size_ow=128 data_loader.params.evidence_llm="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+
+python main_nn.py policy=pew_no_ssl data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.batch_size=16 policy.params.weight_decay=1e-5 neural_net=multihead_net neural_net.params.n_unfreeze=2 neural_net.params.loss_fn_type='ce' neural_net.params.do_ssl=False data_loader.params.evidence_llm="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"

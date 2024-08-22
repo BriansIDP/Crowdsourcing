@@ -34,8 +34,8 @@ def eval_model(cfg, model, dataloader):
     for i, batch in enumerate(tqdm(dataloader)):
         inputs, ests, labels = batch
         all_labels.append(labels.detach())
-        if cfg.neural_net.name in ['PEWNetwork']:
-            preds = model(inputs, ests, predict_gt=True)
+        if cfg.neural_net.name in ['MultiHeadNet']:
+            preds = model((inputs, ests), predict_gt=True)
             probs.append(preds.detach())
             preds = (preds > 0.5).int()
         elif cfg.neural_net.name in ['CrowdLayerNN']:
@@ -103,7 +103,7 @@ def load_checkpoint(model, model_dir, epoch):
         raise ValueError(f"Model checkpoint {fulloutput} does not exist")
     # pt_out = torch.load(f'{fulloutput}/pytorch_model.pt')
     model.load_state_dict(torch.load(f'{fulloutput}/pytorch_model.pt'), strict=False)
-    model.tokenizer = AutoTokenizer.from_pretrained(fulloutput)
+    # model.tokenizer = AutoTokenizer.from_pretrained(fulloutput)
 
 @hydra.main(version_base=None, config_path="./conf", config_name="config")
 def main(cfg):
@@ -112,7 +112,7 @@ def main(cfg):
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
                                     num_workers=1)
-    elif cfg.neural_net.name in ['CrowdLayerNN', 'PEWNetwork', 'CombinedModel']:
+    elif cfg.neural_net.name in ['CrowdLayerNN', 'MultiHeadNet', 'CombinedModel']:
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
                                     num_workers=num_workers)
