@@ -16,7 +16,7 @@ from transformers import AutoModelForCausalLM
 from transformers import AutoModelForSeq2SeqLM
 from transformers import SchedulerType, AdamW, get_scheduler
 
-from model import WorkerPredictor
+from model import WorkerPredictor, WorkerCompressor
 from dataloader import WorkerDataset, collate_fn
 from torch.utils.data import DataLoader
 
@@ -46,7 +46,7 @@ def main(args):
         evalmode=True,
         task=task,
         split=1.0, # train_args['split'] if 'split' in train_args else 1.0,
-        mode=train_args["mode"] if "pewcrowd" not in train_args["mode"] else "gt",
+        mode="gt", # train_args["mode"] if "pewcrowd" not in train_args["mode"] else "gt",
     )
     test_dataloader = DataLoader(
         testdata,
@@ -55,13 +55,24 @@ def main(args):
         collate_fn=collate_fn,
     )
     ## Initialise model
-    model = WorkerPredictor(
-        train_args["model_path"],
-        len(llm_list),
-        tokenizer,
-        train_args["regression"],
-        mode=train_args["mode"],
-    ).to(device)
+    if train_args["mode"] == "compression":
+        model = WorkerCompressor(len(llm_list), train_args["target_nllms"])
+        model.to(device)
+    else:
+        lora_config = {}
+        lora_config["lora_rank"] = train_args["lora_rank"]
+        lora_config["lora_alpha"] = train_args["lora_alpha"]
+        lora_config["lora_dropout"] = train_args["lora_dropout"]
+        lora_config["lora_module"] = train_args["lora_module"]
+
+        model = WorkerPredictor(
+            train_args["model_path"],
+            len(llm_list),
+            tokenizer,
+            train_args["regression"],
+            mode=train_args["mode"],
+            lora_config=lora_config,
+        ).to(device)
     modelpath = os.path.join(args.model_path, args.model_ckpt, "pytorch_model.pt")
     trained_params = torch.load(modelpath)
     msg = model.load_state_dict(trained_params, strict=False)
@@ -73,18 +84,6 @@ def main(args):
     predictions = []
     all_errors = []
     all_labels = []
-    # if args.aggregation == "grad":
-    #     with torch.no_grad():
-    #         for i, batch in enumerate(tqdm(test_dataloader)):
-    #             inputs, workers, labels = batch
-    #             prediction, probs = model.predict(
-    #                 inputs,
-    #                 workers,
-    #                 aggregation="ex_error",
-    #             )
-    #             all_errors.append(prediction)
-    #         all_errors = torch.cat(all_errors, dim=0)
-    #         all_errors = all_errors.mean(dim=0)
     all_sigmas = []
     for i, batch in enumerate(tqdm(test_dataloader)):
         inputs, workers, labels = batch
@@ -96,14 +95,18 @@ def main(args):
                 )
                 all_sigmas.append(prediction)
         else:
-            prediction, probs = model.predict(
-                inputs,
-                workers,
-                aggregation=args.aggregation,
-                expected_error=all_errors,
-                labels=(workers < 0.5).float(),
-            )
-            if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp"]:
+            if train_args["mode"] == "compression":
+                loss, prediction = model(workers)
+            else:
+                prediction, probs = model.predict(
+                    inputs,
+                    workers,
+                    aggregation=args.aggregation,
+                    expected_error=all_errors,
+                    labels=(workers < 0.5).float() if "hard" in args.aggregation else 1-workers,
+                    withEM=True if "EM" in args.aggregation else False,
+                )
+            if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "compression"]:
                 prediction = prediction[:, 0] > 0.5 if "pewcrowd" in train_args["mode"] else prediction[:, 0] < 0.5
                 total_hits += (prediction == labels[:, 0]).sum()
             else:
@@ -115,7 +118,6 @@ def main(args):
                 predictions.extend(probs.tolist())
             all_labels.extend(labels[:, 0].tolist())
     # all_sigmas = np.array(all_sigmas)
-    # import pdb; pdb.set_trace()
     if task == "halueval":
         print("Accuracy: {:.5f}".format(total_hits / total_samples))
     elif task == "crosscheck":

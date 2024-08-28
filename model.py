@@ -18,6 +18,33 @@ from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
 from peft import PeftConfig, PeftModel
 
 
+class WorkerCompressor(torch.nn.Module):
+    def __init__(
+        self,
+        nllms,
+        target_llms,
+        kl_factor=0.0,
+    ):
+        super(WorkerCompressor, self).__init__()
+        self.nllms = nllms
+        self.comp_llms = target_llms
+        self.encoder = torch.nn.Linear(nllms, target_llms, bias=False)
+        self.decoder = torch.nn.Linear(target_llms, nllms, bias=False)
+        self.encoder.weight.data = 1/ nllms * torch.ones(target_llms, nllms)
+        self.kl_factor = kl_factor
+        self.epoch = 0
+
+    def forward(self, workers):
+        compressed = torch.sigmoid(self.encoder(workers))
+        # compressed = self.encoder(workers)
+        # recovered = torch.sigmoid(self.decoder(compressed))
+        recovered = self.decoder(compressed)
+        loss = ((recovered - workers) ** 2).mean()
+        # loss = - workers * torch.log(recovered) - (1 - workers) * torch.log(1 - recovered)
+        # loss = loss.mean()
+        return loss, compressed
+
+
 class WorkerPredictor(torch.nn.Module):
     def __init__(
         self,
@@ -28,6 +55,8 @@ class WorkerPredictor(torch.nn.Module):
         mode="pew",
         num_layers=1,
         lora_config={},
+        reg_factor=0,
+        freeze_epoch=0,
     ):
         super(WorkerPredictor, self).__init__()
         self.llm = AutoModelForCausalLM.from_pretrained(
@@ -50,7 +79,7 @@ class WorkerPredictor(torch.nn.Module):
         inner_dim = self.llm.config.hidden_size + self.nllms - 1
         self.inner_dim = inner_dim + 1 if mode != "pew" else inner_dim
         self.outer_dim = self.inner_dim
-        pos_emb_dim = 64
+        pos_emb_dim = self.nllms
         if self.mode == "pew":
             for i in range(self.nllms):
                 setattr(self, "outproj_{}".format(i+1), torch.nn.Linear(self.inner_dim, self.outer_dim))
@@ -58,18 +87,32 @@ class WorkerPredictor(torch.nn.Module):
         elif self.mode == "transformer":
             self.pos_emb = torch.nn.Embedding(self.nllms, pos_emb_dim)
             # encoder_layer = torch.nn.TransformerEncoderLayer(d_model=1+pos_emb_dim+self.llm.config.hidden_size, nhead=1, batch_first=True)
-            encoder_layer = torch.nn.TransformerEncoderLayer(d_model=pos_emb_dim*2, nhead=1, batch_first=True)
+            encoder_layer = torch.nn.TransformerEncoderLayer(d_model=pos_emb_dim+1, nhead=1, batch_first=True)
             self.transformer_encoder = torch.nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
-            self.output_mean = torch.nn.Linear(pos_emb_dim*2, 1)
-            self.output_logdev = torch.nn.Linear(pos_emb_dim*2, 1)
+            self.output_mean = torch.nn.Linear(pos_emb_dim+1, 1)
+            self.output_logdev = torch.nn.Linear(pos_emb_dim+1, 1)
         elif self.mode == "pewcrowd":
             self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size, 2)
-            self.outlayer = torch.nn.Linear(2, 2 * self.nllms, bias=True)
+            self.outlayer = torch.nn.Linear(2, 2 * self.nllms, bias=False)
             self.outlayer.weight.data = torch.eye(2).unsqueeze(0).repeat(self.nllms, 1, 1).view(2 * self.nllms, 2)
         elif self.mode == "pewcrowdimp":
             self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size, 2)
-            self.outlayer = torch.nn.Linear(2, self.nllms, bias=True)
-            self.outlayer.weight.data = torch.cat((torch.ones(self.nllms, 1), 0*torch.ones(self.nllms, 1)), dim=-1)
+            self.outlayer = torch.nn.Linear(2, self.nllms, bias=False)
+            self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.nllms, 1), 0.3 * torch.ones(self.nllms, 1)), dim=-1)
+        elif self.mode == "pewcrowdimpxt":
+            self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size, 2)
+            self.outlayer = torch.nn.Linear(2, self.nllms, bias=False)
+            self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.nllms, 1), 0.3 * torch.ones(self.nllms, 1)), dim=-1)
+            self.skilllayer = torch.nn.Linear(self.llm.config.hidden_size, 2 * self.nllms)
+        elif self.mode == "pewcrowdae" or self.mode == "pewcrowdaepost":
+            if self.mode == "pewcrowdae":
+                self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size, 2)
+            else:
+                self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size + self.nllms, 2)
+            self.outlayer = torch.nn.Linear(2, self.nllms, bias=False)
+            self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.nllms, 1), 0.3 * torch.ones(self.nllms, 1)), dim=-1)
+            self.correlationlayer = torch.nn.Linear(self.nllms, self.nllms, bias=False)
+            self.correlationlayer.weight.data = torch.eye(self.nllms, self.nllms)
         elif self.mode == "gt":
             self.output_layer = torch.nn.Linear(self.llm.config.hidden_size+self.nllms, 2)
         else:
@@ -77,11 +120,14 @@ class WorkerPredictor(torch.nn.Module):
             self.qproj = torch.nn.Linear(self.llm.config.hidden_size+1+pos_emb_dim, 64)
             self.kproj = torch.nn.Linear(1+pos_emb_dim, 64)
             self.z_hat_proj = torch.nn.Linear(self.outer_dim, 1)
-            self.pos_emb = torch.nn.Embedding(self.nllms, pos_emb_dim)
+            # self.pos_emb = torch.nn.Embedding(self.nllms, pos_emb_dim)
         self.activation = torch.nn.ReLU()
         self.drop = torch.nn.Dropout(0.1)
         self.tokenizer = tokenizer
         self.regression = regression
+        self.regularisation = reg_factor
+        self.epoch = 0
+        self.freeze_epoch = freeze_epoch
 
     def freeze_model(self):
         for name, param in self.llm.named_parameters():
@@ -135,19 +181,62 @@ class WorkerPredictor(torch.nn.Module):
         elif self.mode == "pewcrowdimp":
             if self.regression == "hardlabel":
                 labels = (labels < 0.5).long()
-            group_labels = (labels < 0.5).long().sum(dim=-1) > self.nllms/2
             latent_dist = self.bottleneck(self.drop(pred_hidden))
             latent_dist = torch.softmax(latent_dist, dim=-1)
-            normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
-            pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
+            pred_hidden = self.outlayer(latent_dist)
+            # normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
+            # pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
             if self.regression == "skill":
                 # loss = ((pred_hidden.view(-1) - labels.view(-1)) ** 2).mean()
                 loss = - labels * torch.log(pred_hidden) - (1 - labels) * torch.log(1 - pred_hidden)
                 loss = loss.mean()
+                loss += self.regularisation * ((self.outlayer.weight[:,0] - self.outlayer.weight[:,1]) ** 2).mean()
             else:
                 pred_hidden = torch.log(torch.cat([pred_hidden.unsqueeze(-1), 1-pred_hidden.unsqueeze(-1)], dim=-1))
                 loss = torch.nn.functional.cross_entropy(pred_hidden.view(labels.size(0)*self.nllms, 2), labels.view(-1))
-
+        elif self.mode == "pewcrowdimpxt":
+            if self.regression == "hardlabel":
+                labels = (labels < 0.5).long()
+            latent_dist = self.bottleneck(self.drop(pred_hidden))
+            latent_dist = torch.softmax(latent_dist, dim=-1)
+            normalised_weight = self.skilllayer(pred_hidden.detach())
+            normalised_weight = torch.sigmoid(normalised_weight).view(pred_hidden.size(0), self.nllms, 2)
+            if self.epoch < self.freeze_epoch:
+                pred_hidden = self.outlayer(latent_dist)
+                extra_loss = ((normalised_weight - self.outlayer.weight.data) ** 2).mean()
+                normalised_weight = self.outlayer.weight.unsqueeze(0)
+            else:
+                pred_hidden = (normalised_weight * latent_dist.detach().unsqueeze(1)).sum(dim=-1)
+                extra_loss = 0
+            if self.regression == "skill":
+                # loss = ((pred_hidden.view(-1) - labels.view(-1)) ** 2).mean()
+                loss = - labels * torch.log(pred_hidden) - (1 - labels) * torch.log(1 - pred_hidden)
+                loss = loss.mean()
+                loss += self.regularisation * ((normalised_weight[:, :, 0] - normalised_weight[:, :, 1]) ** 2).mean()
+                loss += extra_loss
+            else:
+                pred_hidden = torch.log(torch.cat([pred_hidden.unsqueeze(-1), 1-pred_hidden.unsqueeze(-1)], dim=-1))
+                loss = torch.nn.functional.cross_entropy(pred_hidden.view(labels.size(0)*self.nllms, 2), labels.view(-1))
+        elif self.mode == "pewcrowdae" or self.mode == "pewcrowdaepost":
+            if self.mode == "pewcrowdaepost":
+                pred_hidden = torch.cat([pred_hidden, labels], dim=-1)
+            if self.regression == "hardlabel":
+                labels = (labels < 0.5).long()
+            latent_dist = self.bottleneck(self.drop(pred_hidden))
+            latent_dist = torch.softmax(latent_dist, dim=-1)
+            pred_hidden = self.outlayer(latent_dist)
+            # normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
+            # pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
+            # pred_hidden = torch.sigmoid(self.correlationlayer(pred_hidden))
+            if self.regression == "skill":
+                # loss = ((pred_hidden.view(-1) - labels.view(-1)) ** 2).mean()
+                loss = - labels * torch.log(pred_hidden) - (1 - labels) * torch.log(1 - pred_hidden)
+                loss = loss.mean()
+                loss += self.regularisation * ((self.outlayer.weight[:,0] - self.outlayer.weight[:,1]) ** 2).mean()
+            else:
+                pred_hidden = torch.log(torch.cat([pred_hidden.unsqueeze(-1), 1-pred_hidden.unsqueeze(-1)], dim=-1))
+                loss = torch.nn.functional.cross_entropy(pred_hidden.view(labels.size(0)*self.nllms, 2), labels.view(-1))
+            
         elif self.mode == "transformer":
             # masking workers and get labels
             workers_in = workers.unsqueeze(-1).repeat(1, self.nllms, 1)
@@ -159,16 +248,17 @@ class WorkerPredictor(torch.nn.Module):
             workers_in = workers_in.masked_fill(input_mask_diag.bool(), 0).unsqueeze(-1)
 
             pos_inds = torch.tensor([i for i in range(self.nllms)]).to(workers.device)
-            pos_embs = self.pos_emb(pos_inds).unsqueeze(0).repeat(workers_in.size(0), 1, 1)
-            workers_in = torch.cat([workers_in * pos_embs, pos_embs], dim=-1)
+            # pos_embs = self.pos_emb(pos_inds).unsqueeze(0).repeat(workers_in.size(0), 1, 1)
+            pos_embs = torch.nn.functional.one_hot(torch.arange(0, self.nllms)).to(workers.device).unsqueeze(0).repeat(workers_in.size(0), 1, 1)
+            workers_in = torch.cat([workers_in, pos_embs], dim=-1)
             enc_out = self.transformer_encoder(workers_in)
             output_mean = self.output_mean(enc_out).squeeze(-1)
             output_mean = torch.diagonal(output_mean.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
             output_logdev = self.output_logdev(enc_out).squeeze(-1)
             output_logdev = torch.diagonal(output_logdev.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
             # loss = output_logdev + 0.5 * (output_mean - labels) ** 2 / (torch.exp(output_logdev) ** 2)
-            loss = output_logdev + 0.5 * (labels) ** 2 / (torch.exp(output_logdev) ** 2)
-            # loss = (output_mean - labels) ** 2
+            # loss = output_logdev + 0.5 * (labels) ** 2 / (torch.exp(output_logdev) ** 2)
+            loss = (output_mean - labels) ** 2
             loss = loss.mean()
         elif self.mode == "gt":
             pred_hidden = torch.cat([pred_hidden, workers], dim=-1)
@@ -211,7 +301,7 @@ class WorkerPredictor(torch.nn.Module):
 
         return loss
 
-    def predict(self, inputs, workers, aggregation="mean", expected_error=1, labels=0):
+    def predict(self, inputs, workers, aggregation="mean", expected_error=1, labels=0, withEM=False):
         if self.regression == "mse" and self.mode != "gt":
             workers = - torch.log(1 / (workers) - 1)
         # worker_mask = torch.eye(self.nllms).unsqueeze(0).to(workers.device)
@@ -269,20 +359,57 @@ class WorkerPredictor(torch.nn.Module):
         elif self.mode == "pewcrowdimp":
             prediction = self.bottleneck(pred_hidden)
             prediction = torch.softmax(prediction, dim=-1)
-            normalised_weight = torch.softmax(self.outlayer.weight.data, dim=-1).unsqueeze(0)
-            pred_hidden = (prediction.unsqueeze(1) * normalised_weight).sum(dim=-1).view(-1, 1)
+            pred_hidden = self.outlayer(prediction).view(prediction.size(0)*self.nllms, 1)
+            normalised_weight = self.outlayer.weight.data
+            # normalised_weight = torch.softmax(self.outlayer.weight.data, dim=-1).unsqueeze(0)
+            # pred_hidden = (prediction.unsqueeze(1) * normalised_weight).sum(dim=-1).view(-1, 1)
             pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
 
             # EM E-step
-            # sigma = prediction[:, 0]
-            # p_r_0 = normalised_weight[0, :, 0]
-            # p_r_1 = 1 - normalised_weight[0, :, 1]
-            # numerator = torch.log(p_r_0).unsqueeze(0) * (1 - labels) + torch.log(1 - p_r_0) * labels
-            # numerator = sigma * torch.exp(numerator.sum(dim=-1))
-            # denominator = torch.log(p_r_1).unsqueeze(0) * labels + torch.log(1 - p_r_1) * (1 - labels)
-            # denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
-            # prediction = (numerator < denominator).float().unsqueeze(-1)
-            # prediction = torch.cat([1-prediction, prediction], dim=-1)
+            if withEM:
+                sigma = prediction[:, 0]
+                p_r_0 = normalised_weight[:, 0]
+                p_r_1 = 1 - normalised_weight[:, 1]
+                numerator = torch.log(p_r_0).unsqueeze(0) * (1 - labels) + torch.log(1 - p_r_0) * labels
+                numerator = sigma * torch.exp(numerator.sum(dim=-1))
+                denominator = torch.log(p_r_1).unsqueeze(0) * labels + torch.log(1 - p_r_1) * (1 - labels)
+                denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
+                prediction = (numerator < denominator).float().unsqueeze(-1)
+                prediction = torch.cat([1-prediction, prediction], dim=-1)
+        elif self.mode == "pewcrowdimpxt":
+            prediction = self.bottleneck(pred_hidden)
+            prediction = torch.softmax(prediction, dim=-1)
+            normalised_weight = self.skilllayer(pred_hidden)
+            normalised_weight = torch.sigmoid(normalised_weight).view(pred_hidden.size(0), self.nllms, 2)
+            # normalised_weight = self.outlayer.weight.data.unsqueeze(0)
+            if self.epoch < self.freeze_epoch:
+                pred_hidden = self.outlayer(prediction).view(prediction.size(0)*self.nllms, 1)
+            else:
+                pred_hidden = (normalised_weight * prediction.unsqueeze(1)).sum(dim=-1).view(prediction.size(0)*self.nllms, 1)
+            pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
+
+            # EM E-step
+            if withEM:
+                sigma = prediction[:, 0]
+                p_r_0 = normalised_weight[:, :, 0]
+                p_r_1 = 1 - normalised_weight[:, :, 1]
+                numerator = torch.log(p_r_0) * (1 - labels) + torch.log(1 - p_r_0) * labels
+                numerator = sigma * torch.exp(numerator.sum(dim=-1))
+                denominator = torch.log(p_r_1) * labels + torch.log(1 - p_r_1) * (1 - labels)
+                denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
+                prediction = (numerator < denominator).float().unsqueeze(-1)
+                prediction = torch.cat([1-prediction, prediction], dim=-1)
+        elif self.mode == "pewcrowdae" or self.mode == "pewcrowdaepost":
+            if self.mode == "pewcrowdaepost":
+                pred_hidden = torch.cat([pred_hidden, labels], dim=-1)
+            prediction = self.bottleneck(pred_hidden)
+            prediction = torch.softmax(prediction, dim=-1)
+            pred_hidden = self.outlayer(prediction).view(prediction.size(0)*self.nllms, 1)
+            # normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
+            # pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
+            # pred_hidden = torch.sigmoid(self.correlationlayer(pred_hidden)).view(prediction.size(0)*self.nllms, 1)
+            pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
+
         elif self.mode == "gt":
             pred_hidden = torch.cat([pred_hidden, workers], dim=-1)
             prediction = torch.softmax(self.output_layer(pred_hidden), dim=-1)
@@ -348,24 +475,25 @@ class WorkerPredictor(torch.nn.Module):
     def density_estimtion(self, inputs, workers):
         workers = - torch.log(1 / (workers) - 1)
         pos_inds = torch.tensor([i for i in range(self.nllms)]).to(workers.device)
-        pos_embs = self.pos_emb(pos_inds).unsqueeze(0)
+        # pos_embs = self.pos_emb(pos_inds).unsqueeze(0)
+        pos_embs = torch.nn.functional.one_hot(torch.arange(0, self.nllms)).to(workers.device).unsqueeze(0)
         workers_mask1 = (workers * torch.tensor([0, 1] + [1] * (self.nllms - 2)).to(workers.device)).unsqueeze(-1)
         workers_mask2 = (workers * torch.tensor([1, 0] + [1] * (self.nllms - 2)).to(workers.device)).unsqueeze(-1)
         workers_mask12 = (workers * torch.tensor([0, 0] + [1] * (self.nllms - 2)).to(workers.device)).unsqueeze(-1)
         # workers_in_1 = workers_mask1 * pos_embs
         # workers_in_2 = workers_mask2 * pos_embs
         # workers_in_12 = workers_mask12 * pos_embs
-        workers_in_1 = torch.cat([workers_mask1 * pos_embs, pos_embs], dim=-1)
-        workers_in_2 = torch.cat([workers_mask2 * pos_embs, pos_embs], dim=-1)
-        workers_in_12 = torch.cat([workers_mask12 * pos_embs, pos_embs], dim=-1)
+        workers_in_1 = torch.cat([workers_mask1, pos_embs], dim=-1)
+        workers_in_2 = torch.cat([workers_mask2, pos_embs], dim=-1)
+        workers_in_12 = torch.cat([workers_mask12, pos_embs], dim=-1)
         workers_in = torch.cat([workers_in_1, workers_in_2, workers_in_12], dim=0)
         enc_out = self.transformer_encoder(workers_in)
         output_mean = self.output_mean(enc_out).squeeze(-1)
         # output_mean = torch.diagonal(output_mean.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
         output_logdev = self.output_logdev(enc_out).squeeze(-1)
-        sigma_123 = torch.exp(output_logdev[0, 0]) ** 2
-        sigma_213 = torch.exp(output_logdev[1, 1]) ** 2
-        sigma_13 = torch.exp(output_logdev[2, 0]) ** 2
-        sigma_23 = torch.exp(output_logdev[2, 1]) ** 2
+        sigma_123 = output_mean[0,0] # torch.exp(output_logdev[0, 0]) ** 2
+        sigma_213 = output_mean[1,1] # torch.exp(output_logdev[1, 1]) ** 2
+        sigma_13 = output_mean[2,0] # torch.exp(output_logdev[2, 0]) ** 2
+        sigma_23 = output_mean[2,1] #torch.exp(output_logdev[2, 1]) ** 2
         # output_logdev = torch.diagonal(output_logdev.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
         return [sigma_123.item(), sigma_213.item(), sigma_13.item(), sigma_23.item()]

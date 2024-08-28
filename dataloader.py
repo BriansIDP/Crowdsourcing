@@ -58,12 +58,12 @@ class WorkerDataset(Dataset):
     def preprocessing(self, data):
         datasamples = []
         labels = []
-        if self.mode == "pew" or "pewcrowd" in self.mode:
+        if self.mode == "pew" or "pewcrowd" in self.mode or "compression" in self.mode:
             for llm in self.evidence_llm:
                 datasample = []
                 for cllm in self.evidence_llm:
-                    if cllm != llm:
-                        datasample.append(max(0.0001, min(0.9999, data[cllm][0])))
+                    # if cllm != llm:
+                    datasample.append(max(0.0001, min(0.9999, data[cllm][0])))
                 datasamples.append(datasample)
                 if self.evalmode and self.mode == "pew":
                     if self.task == "halueval":
