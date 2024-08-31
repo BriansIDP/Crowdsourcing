@@ -1,0 +1,7 @@
+python main.py policy=em_asym_bin policy.params.seed=0 policy.params.prior_probs_file="exp\crowd_lm\2024-08-15_20-55-08\probs.npy" data_loader=halu_dialogue_bin
+python main.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
+
+python main.py policy=em_asym_bin policy.params.seed=0 policy.params.prior_probs_file="exp\crowd_lm\2024-08-16_12-51-20\probs.npy" data_loader=halu_dialogue_bin
+python main.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
+
+python main.py data_loader=halu_dialogue_bin policy=avg_ssl_preds policy.params.lr=0.001 policy.params.weight_decay=0.01 neural_net.params.hidden_size=100 neural_net.params.seed=0 policy.params.use_joblib_fit=True policy.params.logits=False

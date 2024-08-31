@@ -1,0 +1,17 @@
+python main.py policy=majority_vote data_loader=halu_dialogue_bin data_loader.params.model_list="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+-- 0.762
+python main.py policy=majority_vote data_loader=halu_dialogue_bin
+-- 0.748
+
+python main.py policy=averaging data_loader=halu_dialogue_logit data_loader.params.model_list="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+python main.py policy=averaging data_loader=halu_dialogue_logit
+
+python main.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin data_loader.params.model_list="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+-- 0.768
+python main.py policy=em_sym_bin policy.params.seed=0 data_loader=halu_dialogue_bin data_loader.params.model_list="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+-- 0.768
+
+python main.py policy=avg_ssl_preds policy.params.logits=False policy.params.use_joblib_fit=True neural_net.params.hidden_size=100 data_loader=halu_dialogue_bin data_loader.params.model_list="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+-- 0.766
+python main.py policy=avg_ssl_preds policy.params.logits=True policy.params.use_joblib_fit=True neural_net.params.hidden_size=100 data_loader=halu_dialogue_logit data_loader.params.model_list="[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+-- 0.763

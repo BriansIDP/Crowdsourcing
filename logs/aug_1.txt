@@ -1,0 +1,1 @@
+python train.py data_loader=halu_dialogue_logit policy=avg_ssl_preds policy.params.lr=0.001 policy.params.use_joblib_fit=True neural_net.params.hidden_size=100 neural_net.params.seed=0
