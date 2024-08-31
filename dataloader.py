@@ -58,7 +58,7 @@ class WorkerDataset(Dataset):
     def preprocessing(self, data):
         datasamples = []
         labels = []
-        if self.mode == "pew" or "pewcrowd" in self.mode or "compression" in self.mode:
+        if self.mode == "pew":
             for llm in self.evidence_llm:
                 datasample = []
                 for cllm in self.evidence_llm:
@@ -66,23 +66,27 @@ class WorkerDataset(Dataset):
                     datasample.append(max(0.0001, min(0.9999, data[cllm][0])))
                 datasamples.append(datasample)
                 if self.evalmode and self.mode == "pew":
-                    if self.task == "halueval":
-                        labels.append(1 if data['ref'] == 'yes' else 0)
+                    if self.task in ["halueval", "truthfulqa"]:
+                        labels.append(0 if data['ref'] == 'yes' else 1)
                     elif self.task == "crosscheck":
                         labels.append(data['ref'])
                 else:
                     labels.append(max(0.0001, min(0.9999, data[llm][0])))
-        elif self.mode == "gt":
+        elif self.mode == "gt" or "compression" in self.mode or "pewcrowd" in self.mode:
             datasamples = [max(0.0001, min(0.9999, data[cllm][0])) for cllm in self.evidence_llm]
-            labels = [1 if data['ref'] == 'yes' else 0]
+            labels = [0 if data['ref'] == 'yes' else 1]
         else:
             datasamples = [max(0.0001, min(0.9999, data[cllm][0])) for cllm in self.evidence_llm]
             if self.evalmode:
-                labels = [1 if data['ref'] == 'yes' else 0]
+                labels = [0 if data['ref'] == 'yes' else 1]
             else:
                 labels = [max(0.0001, min(0.9999, data[cllm][0])) for cllm in self.evidence_llm]
         if self.task == "halueval":
             input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
+        elif self.task == "truthfulqa":
+            input_str = "Query: {}\nResponse: {}\nIs the answer truthful to the question?".format(data["query"], data["response"])
+        elif self.task == "arenabinary":
+            input_str = "Query: {}\n{}\nIs answer A better than answer B?".format(data["query"], data["response"])
         elif self.task == "crosscheck":
             input_str = "Passage: {}\nIs there any non-factual or hallucinated information in the passage?".format(data["query"])
         else:

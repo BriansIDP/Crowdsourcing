@@ -36,7 +36,7 @@ def main(args):
         train_args = json.load(fin)
     tokenizer = AutoTokenizer.from_pretrained(train_args["model_path"])
     llm_list = train_args["evidence_llm"].split(',')
-    task = "halueval" if "halueval" in args.testfile else "crosscheck"
+    task = train_args["task"] if "task" in train_args else "halueval"
     task = "artificial" if "artificial" in args.testfile else task
 
     testdata = WorkerDataset(
@@ -67,7 +67,7 @@ def main(args):
 
         model = WorkerPredictor(
             train_args["model_path"],
-            len(llm_list),
+            train_args["target_nllms"] if train_args["mode"] == "pewcrowdae" else len(llm_list),
             tokenizer,
             train_args["regression"],
             mode=train_args["mode"],
@@ -77,6 +77,13 @@ def main(args):
     trained_params = torch.load(modelpath)
     msg = model.load_state_dict(trained_params, strict=False)
 
+    if train_args["mode"] == "pewcrowdae" and train_args["encdecpath"] != "":
+        ae_model = WorkerCompressor(len(llm_list), train_args["target_nllms"]).to(device)
+        state_dict = torch.load(train_args["encdecpath"])
+        ae_model.load_state_dict(state_dict, strict=False)
+    else:
+        ae_model = None
+
     model.eval()
 
     total_hits = 0
@@ -85,40 +92,52 @@ def main(args):
     all_errors = []
     all_labels = []
     all_sigmas = []
-    for i, batch in enumerate(tqdm(test_dataloader)):
-        inputs, workers, labels = batch
-        if task == "artificial":
-            for worker in workers:
-                prediction = model.density_estimtion(
-                    inputs,
-                    worker.unsqueeze(0),
-                )
-                all_sigmas.append(prediction)
-        else:
-            if train_args["mode"] == "compression":
-                loss, prediction = model(workers)
+    with torch.no_grad():
+        for i, batch in enumerate(tqdm(test_dataloader)):
+            inputs, workers, labels = batch
+            if task == "artificial":
+                for worker in workers:
+                    prediction = model.density_estimtion(
+                        inputs,
+                        worker.unsqueeze(0),
+                    )
+                    all_sigmas.append(prediction)
             else:
-                prediction, probs = model.predict(
-                    inputs,
-                    workers,
-                    aggregation=args.aggregation,
-                    expected_error=all_errors,
-                    labels=(workers < 0.5).float() if "hard" in args.aggregation else 1-workers,
-                    withEM=True if "EM" in args.aggregation else False,
-                )
-            if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "compression"]:
-                prediction = prediction[:, 0] > 0.5 if "pewcrowd" in train_args["mode"] else prediction[:, 0] < 0.5
-                total_hits += (prediction == labels[:, 0]).sum()
-            else:
-                total_hits += (prediction == labels[:, 0]).sum()
-            total_samples += prediction.size(0)
-            if task == "halueval":
-                predictions.extend(prediction.tolist())
-            elif task == "crosscheck":
-                predictions.extend(probs.tolist())
-            all_labels.extend(labels[:, 0].tolist())
+                if train_args["mode"] == "compression":
+                    loss, prediction = model(workers)
+                else:
+                    if train_args["mode"] == "pewcrowdae":
+                        aeloss, workers = ae_model(workers)
+                        # workers = 1 - workers
+                    prediction, probs = model.predict(
+                        inputs,
+                        workers,
+                        aggregation=args.aggregation,
+                        expected_error=all_errors,
+                        labels=(workers < 0.5).float() if "hard" in args.aggregation else 1-workers,
+                        withEM=True if "EM" in args.aggregation else False,
+                    )
+                if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "pewcrowdae"]:
+                    predictions.extend(prediction[:, 0].tolist())
+                    prediction = prediction[:, 0] > 0.5 if "pewcrowd" in train_args["mode"] else prediction[:, 0] < 0.5
+                    total_hits += (prediction == labels[:, 0]).sum()
+                elif train_args["mode"] == "compression":
+                    predictions.extend((prediction > 0.5).tolist())
+                else:
+                    total_hits += (prediction == labels[:, 0]).sum()
+                total_samples += prediction.size(0)
+                all_labels.extend(labels[:, 0].tolist())
     # all_sigmas = np.array(all_sigmas)
-    if task == "halueval":
+    if task in ["halueval", "truthfulqa"]:
+        predictions = np.array(predictions)
+        all_labels = np.array(all_labels)
+        if train_args["mode"] == "compression":
+            total_samples = predictions.shape[0]
+            for k in range(predictions.shape[1]):
+                hits = (predictions[:, k] == all_labels).sum(axis=0)
+                print("Accuracy worker {}: {:.5f}".format(k, hits/total_samples))
+            total_hits = ((predictions.mean(axis=-1) < 0.5) == all_labels).sum()
+        # np.save("outputs/sigma_reg.npy", np.array(predictions))
         print("Accuracy: {:.5f}".format(total_hits / total_samples))
     elif task == "crosscheck":
         predictions = np.array(predictions)

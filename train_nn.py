@@ -39,7 +39,7 @@ def main(args):
     ## Initialise data
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
     llm_list = args.evidence_llm.split(',')
-    task = "halueval" if "halueval" in args.train_data_path else "crosscheck"
+    task = args.task
     traindata = WorkerDataset(
         args.train_data_path,
         tokenizer,
@@ -84,7 +84,7 @@ def main(args):
 
         model = WorkerPredictor(
             args.model_path,
-            len(llm_list),
+            args.target_nllms if args.mode == "pewcrowdae" else len(llm_list),
             tokenizer,
             args.regression,
             mode=args.mode,
@@ -92,6 +92,14 @@ def main(args):
             reg_factor=args.reg_factor,
             freeze_epoch=args.freeze_epoch,
         ).to(device)
+
+    if args.mode == "pewcrowdae" and args.encdecpath != "":
+        ae_model = WorkerCompressor(len(llm_list), args.target_nllms).to(device)
+        state_dict = torch.load(args.encdecpath)
+        ae_model.eval()
+        ae_model.load_state_dict(state_dict, strict=False)
+    else:
+        ae_model = None
 
     ## Optimiser
     no_decay = ["bias", "LayerNorm.weight"]
@@ -125,6 +133,7 @@ def main(args):
     # Train loop
     for epoch in range(args.num_train_epochs):
         model.train()
+        print("Starting epoch {}".format(epoch))
         model.epoch = epoch
         if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
             model.freeze_model()
@@ -136,10 +145,11 @@ def main(args):
             optimizer,
             lr_scheduler,
             tokenizer,
+            ae_model=ae_model,
         )
         if args.split < 1.0:
             model.eval()
-            eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer)
+            eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
 
         current_lr = optimizer.param_groups[0]["lr"]
         if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
@@ -155,6 +165,7 @@ def train_one_epoch(
     optimizer,
     lr_scheduler,
     tokenizer,
+    ae_model=None,
 ):
     optimizer.zero_grad()
     trainsize = len(train_dataloader)
@@ -164,8 +175,14 @@ def train_one_epoch(
     for i, batch in enumerate(train_dataloader):
         inputs, workers, labels = batch
         if args.mode == "compression":
-            loss, _ = model(labels)
+            loss, _ = model(workers)
         else:
+            if args.mode == "gt":
+                labels = ((workers<0.5).sum(dim=-1) > labels.size(0) // 2).long()
+            elif args.mode == "pewcrowdae":
+                with torch.no_grad():
+                    aeloss, workers = ae_model(workers)
+                    workers = 1 - workers
             loss = model(
                 inputs,
                 workers,
@@ -195,39 +212,55 @@ def eval_one_epoch(
     model,
     valid_dataloader,
     tokenizer,
+    ae_model=None,
 ):
     hits = 0
     total = 0
     group_hits = 0
     group_total = 0
-    for batch in tqdm(valid_dataloader):
-        inputs, workers, labels = batch
-        if args.mode == "compression":
-            loss = model(labels)
-        else:
-            pred, hidden = model.predict(
-                inputs,
-                workers,
-                labels=labels < 0.5,
-            )
-        if "pewcrowd" in args.mode:
-            group_labels = labels > 0.5
-            group_hits += (group_labels.view(-1) == hidden.max(dim=-1)[1]).sum()
-            group_total += group_labels.view(-1).size(0)
-            labels = ((labels < 0.5).sum(dim=-1) > labels.size(-1) // 2).long()
-            if len(pred.size()) > 1:
-                hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
+    with torch.no_grad():
+        for batch in tqdm(valid_dataloader):
+            inputs, workers, labels = batch
+            if args.mode == "compression":
+                loss, pred = model(workers, evalmode=True)
             else:
-                hits += (labels[:, 0] == pred).sum()
-            total += pred.size(0)
-        else:
-            hits += loss
-            total += 1
+                if args.mode == "pewcrowdae":
+                    aeloss, workers = ae_model(workers)
+                    workers = 1 - workers
+                pred, hidden = model.predict(
+                    inputs,
+                    workers,
+                    labels=labels < 0.5,
+                )
+            if "pewcrowd" in args.mode:
+                group_labels = workers > 0.5
+                group_hits += (group_labels.view(-1) == hidden.max(dim=-1)[1]).sum()
+                group_total += group_labels.view(-1).size(0)
+                # labels = ((labels < 0.5).sum(dim=-1) > labels.size(-1) // 2).long()
+                if len(pred.size()) > 1:
+                    hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
+                else:
+                    hits += (labels[:, 0] == pred).sum()
+                total += pred.size(0)
+            elif args.mode == "gt":
+                labels = labels.view(-1) # ((labels < 0.5).sum(dim=-1) > labels.size(-1) // 2).long()
+                hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
+                total += pred.size(0)
+            else:
+                hits += loss
+                total += 1
+                # group_pred = (pred < 0.5).sum(dim=-1) < pred.size(-1) // 2 # pred.mean(dim=-1) < 0.5
+                group_pred = pred.mean(dim=-1) < 0.5
+                group_hits += (group_pred == labels.view(-1)).sum()
+                group_total += group_pred.size(0)
     if "pewcrowd" in args.mode:
         logging("Group Accuracy: {:.5f}".format(group_hits/group_total), args.logfile)
         logging("Accuracy: {:.5f}".format(hits/total), args.logfile)
+    elif args.mode == "gt":
+        logging("Accuracy: {:.5f}".format(hits/total), args.logfile)
     else:
         logging("Validation Loss: {:.5f}".format(hits/total), args.logfile)
+        logging("Group Accuracy: {:.5f}".format(group_hits/group_total), args.logfile)
 
 
 def save_checkpoint(model, tokenizer, outputdir, epoch):
@@ -379,6 +412,18 @@ if __name__ == "__main__":
         type=int,
         default=1,
         help="Number of LLMs to compress to",
+    )
+    parser.add_argument(
+        "--task",
+        type=str,
+        default='halueval',
+        help="Task name",
+    )
+    parser.add_argument(
+        "--encdecpath",
+        type=str,
+        default='',
+        help="path to the encoder-decoder model",
     )
     args = parser.parse_args()
     main(args)
