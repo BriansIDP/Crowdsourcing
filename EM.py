@@ -9,24 +9,34 @@ from scipy.stats import norm
 np.random.seed(1)
 
 
-def get_data(datapath, model_list):
+def get_data(datapath, model_list, task="halueval"):
     dataset = {}
     threshold = 0.5
+    if task == "truthfulqa":
+        with open(os.path.join(datapath, "truthful_qa.json")) as fin:
+            data =json.load(fin)
+    elif task == "arenabinary":
+        with open(os.path.join(datapath, "arena_hard_binary.json")) as fin:
+            data = json.load(fin)
     for model in model_list:
         hits = 0
         dataset[model] = []
         labels = []
-        with open(os.path.join(datapath, "halueval_dialogue_{}.json".format(model))) as fin:
-            modeldata = json.load(fin)[model]
+        if task == "halueval":
+            with open(os.path.join(datapath, "halueval_dialogue_{}.json".format(model))) as fin:
+                modeldata = json.load(fin)[model]
+        else:
+            modeldata = data
         for datapiece in modeldata:
             true_label = 0 if datapiece["ref"] == "yes" else 1
             labels.append(true_label)
-            dataset[model].append(datapiece["prob"])
+            probs = datapiece["prob"] if task == "halueval" else datapiece[model]
+            dataset[model].append(probs)
             # if datapiece["prob"][0] > datapiece["prob"][1] and true_label == 0:
-            if datapiece["prob"][0] > threshold and true_label == 0:
+            if probs[0] > threshold and true_label == 0:
                 hits += 1
             # elif datapiece["prob"][1] > datapiece["prob"][0] and true_label == 1:
-            elif datapiece["prob"][0] < threshold and true_label == 1:
+            elif probs[0] < threshold and true_label == 1:
                 hits += 1
         print("{} Acc: {:.3f}".format(model, hits/len(dataset[model])))
     return dataset, labels
@@ -334,21 +344,22 @@ def EM_bimodal_biased(
 
 def main(args):
     # model_list = ["llama3", "beluga", "mistral", "zephyr", "starling", "openorca", "dolphin", "mistral1", "hermes2", "hermes25"]
-    model_list = ["llama3", "beluga", "mistral", "zephyr", "starling"]
+    model_list = ["llama3", "beluga", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25"]
+    # model_list = ["llama3", "beluga", "mistral", "zephyr", "starling"]
     artificial = False
     v_bar_gen, mu_bar_gen = 2, 2
     mean_1 = np.array([1, 2, 1])
     mean_2 = np.array([-2, -2, -1])
     cov_1 = np.array([[5, 2, 2], [2, 3, 1], [2, 1, 3]])
     # cov_1 = np.matmul(cov_1, cov_1.T)
-    print(cov_1)
+    # print(cov_1)
     cov_2 = cov_1
     if args.datapath == "artificial":
         data, labels, z_t = get_artificial_data(mu_bar_gen, v_bar_gen, mean_1, mean_2, cov_1, cov_2, 10000)
         artificial = True
         np.save("outputs/gt.npy", z_t)
     else:
-        dataset, labels = get_data(args.datapath, model_list)
+        dataset, labels = get_data(args.datapath, model_list, task=args.task)
         data_tensor = np.transpose(np.array([dataset[model] for model in model_list]), (1, 0, 2)) # .transpose(0, 1)
         labels = np.array(labels)
 
@@ -465,6 +476,12 @@ if __name__ == "__main__":
         type=str,
         default="./data",
         help="Data path",
+    )
+    commandLineParser.add_argument(
+        "--task",
+        type=str,
+        default="halueval",
+        help="Task name",
     )
     args = commandLineParser.parse_known_args()
     main(args[0])
