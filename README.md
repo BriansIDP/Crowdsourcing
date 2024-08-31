@@ -51,3 +51,8 @@ Note that the `--split` determines the split between train and validation - 0.5 
 ```
 ./eval.sh
 ```
+
+### Two New Datasets
+TruthfulQA is under `data/truthfulQA`, and the training file is `truthful_qa.json`.
+
+Download [Chatbot Arena Hard](https://huggingface.co/datasets/BrianatCambridge/Arena/blob/main/arena_hard_binary.json) with binary labels, and put it under `data/Arena/arena_hard_binary.json`
