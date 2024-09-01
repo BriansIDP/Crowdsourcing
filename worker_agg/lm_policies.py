@@ -84,6 +84,7 @@ class LMMajVote:
                  lr_scheduler_type: str='cosine',
                  log_interval: int=100,
                  batch_size: int=16,
+                 patience: int=2
                  ) -> None:
         self.model = model
         # self.num_workers = num_workers
@@ -97,6 +98,7 @@ class LMMajVote:
         self.log_interval = log_interval
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.patience = patience
 
     def collate_fn(self, batch):
         input_ids, ests = zip(*batch)
@@ -131,7 +133,8 @@ class LMMajVote:
                                num_warmup_steps=self.num_warmup_steps,
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
-                               log_interval=self.log_interval)
+                               log_interval=self.log_interval,
+                               patience=self.patience)
         finetuner.run()
 
     def predict(self, inputs, ests):
