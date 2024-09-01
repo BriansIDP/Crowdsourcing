@@ -118,31 +118,6 @@ class HaluQABinary:
             ests[:, i] = est_dict[model]
         return ests, outcomes
 
-class HaluDialBertPCA:
-    def __init__(self, filepath, model_list):
-        assert Path(filepath).exists()
-        self.all_data = np.load(filepath)
-        self.num_workers = len(model_list)
-
-    def get_data(self, split_type='train'):
-        if split_type == 'train':
-            context = self.all_data['context_train']
-            ests = self.all_data['ests_train']
-            outcomes = self.all_data['outcomes_train']
-        elif split_type == 'val':
-            context = self.all_data['context_val']
-            ests = self.all_data['ests_val']
-            outcomes = self.all_data['outcomes_val']
-        elif split_type == 'test':
-            context = self.all_data['context_test']
-            ests = self.all_data['ests_test']
-            outcomes = self.all_data['outcomes_test']
-        else:
-            raise ValueError("Invalid split type")
-        assert context.shape[0] == ests.shape[0]
-        assert ests.shape[1] == self.num_workers
-        return context, ests, outcomes
-
 class HaluDialEmbed:
     def __init__(self, filepath, model_list, 
                  seed: int):
@@ -240,6 +215,7 @@ class HaluDialBinaryLM(Dataset):
         split=0.5,
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu',
         with_gt=False,
+        task='halueval',
     ):
         super().__init__()
         with open(data_path) as fin:
@@ -258,6 +234,7 @@ class HaluDialBinaryLM(Dataset):
                 self.data = self.data[:portion] if portion > 0 else self.data[portion:]
                 # self.data = self.data[:portion] 
         self.with_gt = with_gt
+        self.task = task
 
     def __len__(self):
         return len(self.data)
@@ -268,7 +245,12 @@ class HaluDialBinaryLM(Dataset):
     def preprocessing(self, data):
         ests = [data[cllm][0]>0.5 for cllm in self.evidence_llm]
         outcomes = [1 if data['ref'] == 'yes' else 0]
-        input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
+        if self.task == 'halueval':
+            input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
+        elif self.task == 'truthfulqa':
+            input_str = "Query: {}\nResponse: {}\nIs the answer truthful to the question?".format(data["query"], data["response"])
+        else:   
+            raise ValueError(f"Invalid task {self.task}")
         prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]
         if self.with_gt:
             return prompt_inputs, torch.tensor(ests).float(), torch.tensor(outcomes)
@@ -289,3 +271,21 @@ class HaluDialBinaryLM(Dataset):
             return inputs, ests, outcomes
         else:
             return inputs, ests
+
+class TruthfulQABinary:
+    def __init__(self, datapath, model_list):
+        self.datapath = datapath
+        self.model_list = model_list
+
+    def get_data(self):
+        filepath = Path(self.datapath) / "truthful_qa.json"
+        with open(filepath) as fin:
+            data = json.load(fin)
+        ests = []
+        outcomes = []
+        for datap in data:
+            ests.append([datap[cllm][0]>0.5 for cllm in self.model_list])
+            outcomes.append(1 if datap['ref'] == 'yes' else 0)
+        ests = np.array(ests)
+        outcomes = np.array(outcomes)
+        return ests, outcomes

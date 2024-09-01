@@ -1,0 +1,3 @@
+python main.py --multirun policy=em_sym_bin "policy.params.seed=range(5)" data_loader=truthfulqa_bin
+python main.py --multirun policy=em_asym_bin "policy.params.seed=range(5)" data_loader=truthfulqa_bin
+python main.py policy=majority_vote data_loader=truthfulqa_bin
