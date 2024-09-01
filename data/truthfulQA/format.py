@@ -51,13 +51,6 @@ with open("zephyr-7b-beta.jsonl") as fin:
         probs = np.exp(probs) / np.exp(probs).sum()
         data[i]["zephyr"] = list(probs)
 
-with open("zephyr-7b-beta.jsonl") as fin:
-    for i, line in enumerate(fin):
-        info = json.loads(line)
-        probs = np.array([info["logit_yes"], info["logit_no"]])
-        probs = np.exp(probs) / np.exp(probs).sum()
-        data[i]["zephyr"] = list(probs)
-
 with open("Mistral-7B-OpenOrca.jsonl") as fin:
     for i, line in enumerate(fin):
         info = json.loads(line)
@@ -71,6 +64,20 @@ with open("Mistral-7B-Instruct-v0.1.jsonl") as fin:
         probs = np.array([info["logit_yes"], info["logit_no"]])
         probs = np.exp(probs) / np.exp(probs).sum()
         data[i]["mistral1"] = list(probs)
+
+with open("StableBeluga-7B.jsonl") as fin:
+    for i, line in enumerate(fin):
+        info = json.loads(line)
+        probs = np.array([info["logit_yes"], info["logit_no"]])
+        probs = np.exp(probs) / np.exp(probs).sum()
+        data[i]["beluga"] = list(probs)
+
+with open("dolphin-2.1-mistral-7b.jsonl") as fin:
+    for i, line in enumerate(fin):
+        info = json.loads(line)
+        probs = np.array([info["logit_yes"], info["logit_no"]])
+        probs = np.exp(probs) / np.exp(probs).sum()
+        data[i]["dolphin"] = list(probs)
 
 with open("truthful_qa.json", "w") as fout:
     json.dump(data, fout, indent=4)

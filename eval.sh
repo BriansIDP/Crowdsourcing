@@ -4,9 +4,9 @@ trainfile="data/halueval_dialogue.json"
 # trainfile=data/truthfulQA/truthful_qa.json
 # trainfile="data/artificial.json"
 # trainfile="data/wikibio_crosscheck_gpt3.json"
-expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_pewcrowdae_skill_halueval_5beluga
+expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_pewcrowdae_skill_halueval
 # expdir=exp/pewcrowd_llama3_mse_direct_crowdlayer_constrained
-# expdir=exp/worker_compression_encoder_decoder_8workers
+# expdir=exp/worker_compression_encoder_decoder
 
 # python neuralEM.py \
 python predict.py \

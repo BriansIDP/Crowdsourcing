@@ -119,10 +119,10 @@ def main(args):
                     )
                 if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "pewcrowdae"]:
                     predictions.extend(prediction[:, 0].tolist())
-                    prediction = prediction[:, 0] > 0.5 if "pewcrowd" in train_args["mode"] else prediction[:, 0] < 0.5
+                    prediction = prediction[:, 0] < 0.5
                     total_hits += (prediction == labels[:, 0]).sum()
                 elif train_args["mode"] == "compression":
-                    predictions.extend((prediction > 0.5).tolist())
+                    predictions.extend((prediction < 0.5).tolist())
                 else:
                     total_hits += (prediction == labels[:, 0]).sum()
                 total_samples += prediction.size(0)
@@ -136,7 +136,7 @@ def main(args):
             for k in range(predictions.shape[1]):
                 hits = (predictions[:, k] == all_labels).sum(axis=0)
                 print("Accuracy worker {}: {:.5f}".format(k, hits/total_samples))
-            total_hits = ((predictions.mean(axis=-1) < 0.5) == all_labels).sum()
+            total_hits = ((predictions.mean(axis=-1) > 0.5) == all_labels).sum()
         # np.save("outputs/sigma_reg.npy", np.array(predictions))
         print("Accuracy: {:.5f}".format(total_hits / total_samples))
     elif task == "crosscheck":

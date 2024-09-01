@@ -182,7 +182,7 @@ def train_one_epoch(
             elif args.mode == "pewcrowdae":
                 with torch.no_grad():
                     aeloss, workers = ae_model(workers)
-                    workers = 1 - workers
+                    # workers = 1 - workers
             loss = model(
                 inputs,
                 workers,
@@ -226,7 +226,7 @@ def eval_one_epoch(
             else:
                 if args.mode == "pewcrowdae":
                     aeloss, workers = ae_model(workers)
-                    workers = 1 - workers
+                    # workers = 1 - workers
                 pred, hidden = model.predict(
                     inputs,
                     workers,
