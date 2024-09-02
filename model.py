@@ -36,6 +36,7 @@ class WorkerCompressor(torch.nn.Module):
 
     def forward(self, workers, evalmode=False):
         normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
+        import pdb; pdb.set_trace()
         compressed = torch.einsum('bi,ji->bj', workers, normalised_weights)
         # compressed = torch.sigmoid(self.encoder(workers))
         # compressed = self.encoder(workers)
@@ -368,9 +369,9 @@ class WorkerPredictor(torch.nn.Module):
                 sigma = prediction[:, 0]
                 p_r_0 = normalised_weight[:, 0]
                 p_r_1 = 1 - normalised_weight[:, 1]
-                numerator = torch.log(p_r_0).unsqueeze(0) * (1 - workers) + torch.log(1 - p_r_0) * workers
+                numerator = torch.log(p_r_0).unsqueeze(0) * (1 - labels) + torch.log(1 - p_r_0) * labels
                 numerator = sigma * torch.exp(numerator.sum(dim=-1))
-                denominator = torch.log(p_r_1).unsqueeze(0) * workers + torch.log(1 - p_r_1) * (1 - workers)
+                denominator = torch.log(p_r_1).unsqueeze(0) * labels + torch.log(1 - p_r_1) * (1 - labels)
                 denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
                 prediction = (numerator < denominator).float().unsqueeze(-1)
                 prediction = torch.cat([1-prediction, prediction], dim=-1)

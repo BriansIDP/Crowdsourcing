@@ -178,11 +178,11 @@ def train_one_epoch(
             loss, _ = model(workers)
         else:
             if args.mode == "gt":
-                labels = ((workers<0.5).sum(dim=-1) > labels.size(0) // 2).long()
+                labels = labels.view(-1) # ((workers<0.5).sum(dim=-1) > labels.size(0) // 2).long()
             elif args.mode == "pewcrowdae":
                 with torch.no_grad():
                     aeloss, workers = ae_model(workers)
-                    workers = 1 - workers
+                    # workers = 1 - workers
             loss = model(
                 inputs,
                 workers,
@@ -226,7 +226,7 @@ def eval_one_epoch(
             else:
                 if args.mode == "pewcrowdae":
                     aeloss, workers = ae_model(workers)
-                    workers = 1 - workers
+                    # workers = 1 - workers
                 pred, hidden = model.predict(
                     inputs,
                     workers,
