@@ -36,6 +36,7 @@ class WorkerCompressor(torch.nn.Module):
 
     def forward(self, workers, evalmode=False):
         normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
+        import pdb; pdb.set_trace()
         compressed = torch.einsum('bi,ji->bj', workers, normalised_weights)
         # compressed = torch.sigmoid(self.encoder(workers))
         # compressed = self.encoder(workers)
