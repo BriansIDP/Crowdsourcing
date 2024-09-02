@@ -2,18 +2,13 @@ python main.py --multirun policy=em_sym_bin "policy.params.seed=range(5)" data_l
 python main.py --multirun policy=em_asym_bin "policy.params.seed=range(5)" data_loader=truthfulqa_bin
 python main.py policy=majority_vote data_loader=truthfulqa_bin
 
-python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32 policy.params.model_dir='exp/lm_mv/truthful_qa' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] 
-< 60% accuracy
-
-python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=True policy.params.batch_size=32 policy.params.patience=10 policy.params.model_dir='exp/lm_mv/truthful_qa' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] 
-python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32 policy.params.model_dir='exp/lm_mv/truthful_qa' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] 
-< 60% accuracy
-
-python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=True policy.params.batch_size=32 policy.params.patience=10 policy.params.model_dir='exp/truthful_qa/lm_mv/' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] 
+python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=True policy.params.batch_size=32 policy.params.patience=5 policy.params.model_dir='exp/truthful_qa/lm_mv' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] data_loader.params.task=truthfulqa
+-- train: 65.28% val: 67.73%
+python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=32 policy.params.model_dir='exp/lm_mv/truthful_qa' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] data_loader.params.task=truthfulqa
+-- train: 63.78% val: 64.86%
 
 python main_nn.py policy=lm_gt data_loader=halu_dial_bin_lm policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=False neural_net.params.n_unfreeze=2 policy.params.batch_size=16 policy.params.model_dir='exp/halueval/lm_gt' data_loader.params.split=0.9
 -- old perf recovered, 84% accuracy on val
 
-python main_nn.py policy=lm_gt data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-5 policy.params.weight_decay=1e-6 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=True policy.params.batch_size=16 policy.params.patience=10 policy.params.model_dir='exp/truthfulqa/lm_gt/' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] data_loader.params.task=truthfulqa
-- 64.18% accuracy on val, 72.3% on train
-- best is 70.3% on val
+python main_nn.py policy=lm_gt data_loader=halu_dial_bin_lm data_loader.params.split=0.9 policy.params.lr=1e-4 policy.params.weight_decay=1e-5 neural_net=lm_plus_one_layer neural_net.params.no_freeze_lm=True policy.params.batch_size=16 policy.params.patience=10 policy.params.model_dir='exp/truthfulqa/lm_gt/' data_loader.params.data_path="data/truthfulQA/truthful_qa.json" data_loader.params.evidence_llm=["llama3","starling","mistral","hermes2","hermes25","openorca","zephyr"] data_loader.params.task=truthfulqa
+- 75.84% accuracy on val, 98.9% on train
