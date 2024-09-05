@@ -128,7 +128,7 @@ def main(args):
                 total_samples += prediction.size(0)
                 all_labels.extend(labels[:, 0].tolist())
     # all_sigmas = np.array(all_sigmas)
-    if task in ["halueval", "truthfulqa"]:
+    if task in ["halueval", "truthfulqa", "arenabinary"]:
         predictions = np.array(predictions)
         all_labels = np.array(all_labels)
         if train_args["mode"] == "compression":

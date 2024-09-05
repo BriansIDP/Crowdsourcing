@@ -67,8 +67,8 @@ class WorkerPredictor(torch.nn.Module):
         super(WorkerPredictor, self).__init__()
         self.llm = AutoModelForCausalLM.from_pretrained(
             model_path,
-            # cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
-            cache_dir="scratch/cache",  # Change to your local directory
+            cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
+            torch_dtype=torch.bfloat16 if model_path != "gpt2" else torch.float32,
         )
         if model_path != "gpt2":
             peft_config = LoraConfig(

@@ -131,30 +131,31 @@ def main(args):
     )
 
     # Train loop
-    for epoch in range(args.num_train_epochs):
-        model.train()
-        print("Starting epoch {}".format(epoch))
-        model.epoch = epoch
-        if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
-            model.freeze_model()
-        model = train_one_epoch(
-            args,
-            epoch,
-            model,
-            train_dataloader,
-            optimizer,
-            lr_scheduler,
-            tokenizer,
-            ae_model=ae_model,
-        )
-        if args.split < 1.0:
-            model.eval()
-            eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
+    with torch.cuda.amp.autocast():
+        for epoch in range(args.num_train_epochs):
+            model.train()
+            print("Starting epoch {}".format(epoch))
+            model.epoch = epoch
+            if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
+                model.freeze_model()
+            model = train_one_epoch(
+                args,
+                epoch,
+                model,
+                train_dataloader,
+                optimizer,
+                lr_scheduler,
+                tokenizer,
+                ae_model=ae_model,
+            )
+            if args.split < 1.0:
+                model.eval()
+                eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
 
-        current_lr = optimizer.param_groups[0]["lr"]
-        if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
-            model.unfreeze_model()
-        save_checkpoint(model, tokenizer, args.outputdir, epoch)
+            current_lr = optimizer.param_groups[0]["lr"]
+            if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
+                model.unfreeze_model()
+            save_checkpoint(model, tokenizer, args.outputdir, epoch)
 
 
 def train_one_epoch(
@@ -178,7 +179,8 @@ def train_one_epoch(
             loss, _ = model(workers)
         else:
             if args.mode == "gt":
-                labels = labels.view(-1) # ((workers<0.5).sum(dim=-1) > labels.size(0) // 2).long()
+                # labels = labels.view(-1)
+                labels = ((workers<0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
             elif args.mode == "pewcrowdae":
                 with torch.no_grad():
                     aeloss, workers = ae_model(workers)
@@ -243,7 +245,8 @@ def eval_one_epoch(
                     hits += (labels[:, 0] == pred).sum()
                 total += pred.size(0)
             elif args.mode == "gt":
-                labels = labels.view(-1) # ((labels < 0.5).sum(dim=-1) > labels.size(-1) // 2).long()
+                labels = labels.view(-1)
+                # labels = ((workers < 0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
                 hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
                 total += pred.size(0)
             else:
