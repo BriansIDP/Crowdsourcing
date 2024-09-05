@@ -48,6 +48,11 @@ class WorkerDataset(Dataset):
                 self.data = self.data[start:end]
             else:
                 self.data = self.data[:start] + self.data[end:]
+        elif split == 0.9:
+            start = int(len(self.data) * split)
+            end = int(len(self.data) * (split + 0.05))
+            if self.evalmode:
+                self.data = self.data[start:end]
 
     def __len__(self):
         return len(self.data)

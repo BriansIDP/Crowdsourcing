@@ -16,7 +16,7 @@ def get_data(datapath, model_list, task="halueval"):
         with open(os.path.join(datapath, "truthful_qa.json")) as fin:
             data =json.load(fin)
     elif task == "arenabinary":
-        with open(os.path.join(datapath, "arena_hard_binary.json")) as fin:
+        with open(os.path.join(datapath, "arena_hard_binary_short.json")) as fin:
             data = json.load(fin)
     for model in model_list:
         hits = 0
@@ -343,9 +343,9 @@ def EM_bimodal_biased(
 
 
 def main(args):
-    # model_list = ["llama3", "beluga", "mistral", "zephyr", "starling", "openorca", "dolphin", "mistral1", "hermes2", "hermes25"]
-    model_list = ["llama3", "beluga", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25"]
-    # model_list = ["llama3", "beluga", "mistral", "zephyr", "starling"]
+    model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
+    # model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
+    # model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "hermes2", "hermes25", "mistral1"]
     artificial = False
     v_bar_gen, mu_bar_gen = 2, 2
     mean_1 = np.array([1, 2, 1])
