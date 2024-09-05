@@ -21,6 +21,7 @@ class LMplusOneLayer(nn.Module):
         cache_dir: str = "scratch/cache",
         no_freeze_lm: bool = True,
         n_unfreeze: int = 0,
+        n_outputs: int = 1,
     ):
         super(LMplusOneLayer, self).__init__()
         
@@ -50,27 +51,28 @@ class LMplusOneLayer(nn.Module):
             pass
 
         # Initialize additional layers and move them to the correct device
-        self.output_layer = nn.Linear(self.llm.config.hidden_size, 1).to(self.device)
+        self.n_outputs = n_outputs
+        self.output_layer = nn.Linear(self.llm.config.hidden_size, self.n_outputs).to(self.device)
         # self.activation = nn.ReLU().to(self.device)
 
-        # Initialize weights
-        self._initialize_weights()
+        # # Initialize weights
+        # self._initialize_weights()
 
         # Load the tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
 
-    def _initialize_weights(self):
-        generator = torch.Generator()  # Ensure generator is on the correct device
-        generator.manual_seed(self.seed)
-        # Manually generate random numbers and apply kaiming initialization
-        with torch.no_grad():
-            fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
-            # this was set to relu before
-            gain = 1.0
-            std = gain / fan ** 0.5
-            self.output_layer.weight.data = torch.normal(0, std, size=self.output_layer.weight.shape, 
-                                                         generator=generator).to(self.device)       
-        nn.init.zeros_(self.output_layer.bias)
+    # def _initialize_weights(self):
+    #     generator = torch.Generator()  # Ensure generator is on the correct device
+    #     generator.manual_seed(self.seed)
+    #     # Manually generate random numbers and apply kaiming initialization
+    #     with torch.no_grad():
+    #         fan = nn.init._calculate_correct_fan(self.output_layer.weight, 'fan_in')
+    #         # this was set to relu before
+    #         gain = 1.0
+    #         std = gain / fan ** 0.5
+    #         self.output_layer.weight.data = torch.normal(0, std, size=self.output_layer.weight.shape, 
+    #                                                      generator=generator).to(self.device)       
+    #     nn.init.zeros_(self.output_layer.bias)
 
     def forward(self, 
                 inputs: Dict[str, torch.Tensor]):
@@ -87,15 +89,20 @@ class LMplusOneLayer(nn.Module):
         # layer norm
         pred_hidden = self.llm.transformer.ln_f(pred_hidden)
 
-        # Apply deterministic dropout
-        if self.training:
-            generator = torch.Generator()
-            generator.manual_seed(self.seed)
-            dropout_mask = (torch.rand(pred_hidden.shape, generator=generator) > self.dropout_prob).float().to(pred_hidden.device)
-            pred_hidden = pred_hidden * dropout_mask / (1 - self.dropout_prob)
+        # # Apply deterministic dropout
+        # if self.dropout_prob>0 and self.training:
+        #     generator = torch.Generator()
+        #     generator.manual_seed(self.seed)
+        #     dropout_mask = (torch.rand(pred_hidden.shape, generator=generator) > self.dropout_prob).float().to(pred_hidden.device)
+        #     pred_hidden = pred_hidden * dropout_mask / (1 - self.dropout_prob)
+        # else:
+        #     pass # no dropout
 
-        logits = self.output_layer(pred_hidden)
-        return logits
+        # apply dropout
+        pred_hidden = torch.dropout(pred_hidden, p=self.dropout_prob, train=self.training)
+
+        pred_hidden = self.output_layer(pred_hidden)
+        return pred_hidden
 
 class FinetuneLM:
     def __init__(self, model, train_dataloader, val_dataloader,

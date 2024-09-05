@@ -225,14 +225,22 @@ class HaluDialBinaryLM(Dataset):
         self.evalmode = evalmode
         self.device = device
 
-        if split < 1.0:
-            portion = int(len(self.data) * split)
+        # if split < 1.0:
+        #     portion = int(len(self.data) * split)
+        #     if self.evalmode:
+        #         self.data = self.data[portion:] if portion > 0 else self.data[:portion]
+        #         # self.data = self.data[portion:2*portion] 
+        #     else:
+        #         self.data = self.data[:portion] if portion > 0 else self.data[portion:]
+        #         # self.data = self.data[:portion] 
+        if split < 0.9:
+            start = int(len(self.data) * split)
+            end = int(len(self.data) * (split + 0.1))
             if self.evalmode:
-                self.data = self.data[portion:] if portion > 0 else self.data[:portion]
-                # self.data = self.data[portion:2*portion] 
+                self.data = self.data[start:end]
             else:
-                self.data = self.data[:portion] if portion > 0 else self.data[portion:]
-                # self.data = self.data[:portion] 
+                self.data = self.data[:start] + self.data[end:]
+
         self.with_gt = with_gt
         self.task = task
 
@@ -243,8 +251,8 @@ class HaluDialBinaryLM(Dataset):
         return self.preprocessing(self.data[idx])
 
     def preprocessing(self, data):
-        ests = [data[cllm][0]>0.5 for cllm in self.evidence_llm]
-        outcomes = [1 if data['ref'] == 'yes' else 0]
+        ests = [data[cllm][0]<0.5 for cllm in self.evidence_llm]
+        outcomes = [0 if data['ref'] == 'yes' else 1]
         if self.task == 'halueval':
             input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
         elif self.task == 'truthfulqa':

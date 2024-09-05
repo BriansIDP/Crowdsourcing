@@ -10,3 +10,4 @@ params:
   log_interval: 100
   batch_size: 16
   patience: 2
+  loss_fn_type: 'bce'

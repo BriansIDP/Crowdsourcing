@@ -18,7 +18,9 @@ class LMGroundTruth:
                  lr_scheduler_type: str='cosine',
                  log_interval: int=100,
                  batch_size: int=16,
-                 patience: int=2
+                 patience: int=2,
+                 loss_fn_type='bce',
+                 seed: int=42
                  ) -> None:
         self.model = model
         # self.num_workers = num_workers
@@ -33,6 +35,8 @@ class LMGroundTruth:
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.patience = patience
+        self.loss_fn_type = loss_fn_type
+        self.seed = seed
 
     def collate_fn(self, batch):
         input_ids, ests, outcomes = zip(*batch)
@@ -41,14 +45,18 @@ class LMGroundTruth:
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
         # ests = torch.stack(ests).to(self.device)
         outcomes = torch.stack(outcomes).to(self.device)
+        if self.loss_fn_type == 'ce':
+            outcomes = outcomes.long().squeeze()
         return inputs, outcomes
 
     def fit(self, train_data, val_data):
+        generator = torch.Generator().manual_seed(self.seed)
         train_dataloader = DataLoader(
             train_data,
             batch_size=self.batch_size,
             shuffle=True,
             collate_fn=self.collate_fn,
+            generator=generator
         )
         val_dataloader = DataLoader(
             val_data,
@@ -67,12 +75,17 @@ class LMGroundTruth:
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
-                               patience=self.patience)
+                               patience=self.patience,
+                               loss_fn_type=self.loss_fn_type)
         finetuner.run()
 
     def predict(self, inputs, ests):
-        logits = self.model(inputs,)
-        preds = (logits>0).int().detach()
+        if self.loss_fn_type == 'bce':
+            logits = self.model(inputs,)
+            preds = (logits>0).int().detach()
+        elif self.loss_fn_type == 'ce':
+            logits = self.model(inputs,)
+            preds = torch.argmax(logits, dim=-1)
         return preds
 
 class LMMajVote:
