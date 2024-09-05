@@ -7,3 +7,4 @@ params:
   use_joblib_fit: False
   loss_fn_type: "mse"
   logits: True
+  folds: 5

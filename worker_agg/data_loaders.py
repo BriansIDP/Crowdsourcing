@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Union
 
 import numpy as np
 import torch
@@ -211,11 +211,14 @@ class HaluDialBinaryLM(Dataset):
         data_path,
         model_path,
         evidence_llm=[],
-        evalmode=False,
-        split=0.5,
+        evalmode: bool=False,
+        split: float=0.5,
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu',
-        with_gt=False,
-        task='halueval',
+        with_gt: bool=False,
+        task: str='halueval',
+        cross_val: bool=False,
+        nfolds: Union[int, None]=None,
+        fold: Union[int, None]=None,
     ):
         super().__init__()
         with open(data_path) as fin:
@@ -224,6 +227,8 @@ class HaluDialBinaryLM(Dataset):
         self.evidence_llm = evidence_llm
         self.evalmode = evalmode
         self.device = device
+        self.cross_val = cross_val
+        self.nfolds = nfolds
 
         # if split < 1.0:
         #     portion = int(len(self.data) * split)
@@ -233,13 +238,22 @@ class HaluDialBinaryLM(Dataset):
         #     else:
         #         self.data = self.data[:portion] if portion > 0 else self.data[portion:]
         #         # self.data = self.data[:portion] 
-        if split < 0.9:
-            start = int(len(self.data) * split)
-            end = int(len(self.data) * (split + 0.1))
+        if not self.cross_val:
+            if split < 0.9:
+                start = int(len(self.data) * split)
+                end = int(len(self.data) * (split + 0.1))
+                if self.evalmode:
+                    self.data = self.data[start:end]
+                else:
+                    self.data = self.data[:start] + self.data[end:]
+        else:
+            len_data = len(self.data)
+            val_idx = np.arange(int(fold*len_data/self.folds), int((fold+1)*len_data/self.folds))
+            train_idx = np.array([i for i in range(len_data) if i not in val_idx])
             if self.evalmode:
-                self.data = self.data[start:end]
+                self.data = self.data[val_idx]
             else:
-                self.data = self.data[:start] + self.data[end:]
+                self.data = self.data[train_idx]
 
         self.with_gt = with_gt
         self.task = task

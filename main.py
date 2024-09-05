@@ -1,6 +1,7 @@
 import numpy as np
 # import matplotlib.pyplot as plt
 import hydra
+from sklearn.metrics import roc_auc_score, f1_score
 
 import worker_agg
 
@@ -83,6 +84,8 @@ def main(cfg):
     # group_ests_mv = np.mean(ests, axis=1)>0.5
     accuracy = np.mean(group_ests == outcomes)
     print(f"Accuracy: {accuracy:.3f}")
+    f1 = f1_score(outcomes, group_ests)
+    print(f"F1: {f1:.3f}")
 
     if cfg.data_loader.name in ["HaluDialBertPCA", "HaluDialEmbed"]:
         out = get_data_val(cfg)
@@ -99,7 +102,9 @@ def main(cfg):
             else:
                 group_ests = policy.predict(ests)
         accuracy = np.mean(group_ests == outcomes)
+        f1 = f1_score(outcomes, group_ests)
         print(f"Validation Accuracy: {accuracy:.3f}")
+        print(f"Validation F1: {f1:.3f}")
 
 if __name__ == "__main__":
     main()

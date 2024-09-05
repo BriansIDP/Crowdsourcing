@@ -1,0 +1,8 @@
+python main.py policy=majority_vote data_loader=truthfulqa_bin
+-- acc=0.838, f1=0.813
+python main.py --multirun policy=em_sym_bin "policy.params.seed=range(5)" data_loader=truthfulqa_bin
+-- acc=0.838, f1=0.813
+python main.py --multirun policy=em_asym_bin "policy.params.seed=range(5)" data_loader=truthfulqa_bin
+-- acc=0.841, f1=0.822
+python main.py data_loader=truthfulqa_bin policy=avg_ssl_preds policy.params.lr=0.001 policy.params.weight_decay=0.01 neural_net.params.hidden_size=100 neural_net.params.seed=0 policy.params.logits=False policy.params.loss_fn_type="bce"
+-- acc=0.845

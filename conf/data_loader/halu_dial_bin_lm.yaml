@@ -6,3 +6,5 @@ params:
   evalmode: False
   split: 0.5
   task: "halueval"
+  cross_val: False
+  nfolds: 5

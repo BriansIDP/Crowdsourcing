@@ -82,11 +82,13 @@ class LMGroundTruth:
     def predict(self, inputs, ests):
         if self.loss_fn_type == 'bce':
             logits = self.model(inputs,)
+            probs = torch.sigmoid(logits).detach()
             preds = (logits>0).int().detach()
         elif self.loss_fn_type == 'ce':
             logits = self.model(inputs,)
+            probs = torch.softmax(logits, dim=-1).detach()[:,1]
             preds = torch.argmax(logits, dim=-1)
-        return preds
+        return preds, probs
 
 class LMMajVote:
     def __init__(self, model,
@@ -155,8 +157,9 @@ class LMMajVote:
 
     def predict(self, inputs, ests):
         logits = self.model(inputs,)
+        probs = torch.sigmoid(logits).detach()
         preds = (logits>0).int().detach()
-        return preds
+        return preds, probs
 
 class CrowdLayerLM:
     def __init__(self, model,
@@ -220,9 +223,9 @@ class CrowdLayerLM:
         finetuner.run()
 
     def predict(self, inputs, ests):
-        sigmoids = self.model(inputs, predict_gt=True)
+        sigmoids = self.model(inputs, predict_gt=True).detach().squeeze()
         preds = (sigmoids>0.5).int().detach()
-        return preds
+        return preds, sigmoids
 
 class AvgSSLPredsLM:
     def __init__(self, model,
@@ -296,9 +299,9 @@ class AvgSSLPredsLM:
             return ssl_preds
         else:
             # preds are avg of linear layer outputs
-            preds = self.model((inputs, ests), predict_gt=True)
-            preds = (preds>0.5).int().detach()
-        return preds
+            probs = self.model((inputs, ests), predict_gt=True).detach().squeeze()
+            preds = (probs>0.5).int().detach()
+        return preds, probs
 
 class PEWNoSSL:
     def __init__(self, model,
@@ -375,9 +378,9 @@ class PEWNoSSL:
             return ssl_preds
         else:
             # preds are avg of linear layer outputs
-            preds = self.model(inputs, predict_gt=True)
-            preds = (preds>0.5).int().detach()
-        return preds
+            probs = self.model(inputs, predict_gt=True).detach().squeeze()
+            preds = (probs>0.5).int().detach()
+        return preds, probs
 
 class AvgSSLPredsSepLMs:
     def __init__(self, models,
@@ -464,10 +467,10 @@ class AvgSSLPredsSepLMs:
                 raise ValueError("loss_fn_type should be 'bce' or 'mse'")
         ssl_preds = torch.stack(ssl_preds).transpose(1, 0)
         # print(ssl_preds.shape)
-        preds = torch.mean(ssl_preds, dim=1)
+        preds = torch.mean(ssl_preds, dim=1).detach().squeeze()
         labels = (preds>0.5).int().detach()
         if not testing:
-            return labels
+            return labels, preds
         else:
             return labels, preds, ssl_preds
 
@@ -552,9 +555,9 @@ class PEWNoSSLSepLMs:
                 raise ValueError("loss_fn_type should be 'bce' or 'mse'")
         ssl_preds = torch.stack(ssl_preds).transpose(1, 0)
         # print(ssl_preds.shape)
-        preds = torch.mean(ssl_preds, dim=1)
+        preds = torch.mean(ssl_preds, dim=1).detach().squeeze()
         labels = (preds>0.5).int().detach()
         if not testing:
-            return labels
+            return labels, preds
         else:
             return labels, preds, ssl_preds

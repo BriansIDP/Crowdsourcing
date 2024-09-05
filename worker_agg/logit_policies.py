@@ -216,7 +216,8 @@ class AvgSSLPreds:
                  epochs: int=1000,
                  use_joblib_fit: bool=False,
                  use_joblib_seeds: bool=True,
-                 logits: bool=True
+                 logits: bool=True,
+                 folds: int=5
                  ) -> None:
         print(f"lr: {lr}, weight_decay: {weight_decay}, patience: {patience}, epochs: {epochs}")
         self.neural_nets = neural_nets
@@ -231,6 +232,7 @@ class AvgSSLPreds:
             assert not use_joblib_fit
         self.use_joblib_fit = use_joblib_fit
         self.logits = logits
+        self.folds = folds
     
     def fit(self, estimates: np.ndarray, testing=False) -> None:
         # self.scaler = StandardScaler()
@@ -238,65 +240,81 @@ class AvgSSLPreds:
         if self.logits:
             sigmoid = lambda x: 1/(1+np.exp(-x))
             estimates = sigmoid(estimates)
-        estimates_train = estimates[:int(0.8*estimates.shape[0])]
-        estimates_val = estimates[int(0.8*estimates.shape[0]):]
-        results = []
+        self.fold_models = []
+        for fold in range(self.folds):
+            len_ests = estimates.shape[0]
+            val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
+            train_idx = np.array([i for i in range(len_ests) if i not in val_idx])
+            estimates_train = estimates[train_idx]
+            estimates_val = estimates[val_idx]
+            # estimates_train = estimates[:int(0.8*estimates.shape[0])]
+            # estimates_val = estimates[int(0.8*estimates.shape[0]):]
 
-        def create_data_dict(idx, data, val_data):
-            other_ids = [j for j in range(estimates.shape[1]) if j != idx]
-            x_train = torch.tensor(data[:, other_ids], dtype=torch.float32)
-            x_val = torch.tensor(val_data[:, other_ids], dtype=torch.float32)
-            y_train = torch.tensor(data[:, idx], dtype=torch.float32).reshape(-1, 1)
-            y_val = torch.tensor(val_data[:, idx], dtype=torch.float32).reshape(-1, 1)
-            return {'x_train': x_train, 'y_train': y_train, 'x_val': x_val, 'y_val': y_val}
-            
-        if not self.use_joblib_fit:
-            for i in trange(estimates.shape[1]):
-                result = train_neural_net(**create_data_dict(i, estimates_train, estimates_val),
-                                          neural_net=self.neural_nets[i], loss_fn_type=self.loss_fn_type,
-                                          lr=self.lr, weight_decay=self.weight_decay, patience=self.patience,
-                                          epochs=self.epochs, testing=testing)
-                results.append(result)
-        else:
-            results = Parallel(n_jobs=-1)(
-                            delayed(train_neural_net)(
-                                **create_data_dict(i, estimates_train, estimates_val),
-                                neural_net=self.neural_nets[i],
-                                loss_fn_type=self.loss_fn_type,
-                                lr=self.lr,
-                                weight_decay=self.weight_decay,
-                                patience=self.patience,
-                                epochs=self.epochs,
-                                testing=testing
-                            ) for i in range(self.num_workers)
-                        )
-        self.models = []
-        self.stats_dict = {}
-        for i, (model, stats_dict_i) in enumerate(results):
-            self.models.append(model)
-            if i == 0:
-                for key in stats_dict_i:
-                    self.stats_dict[key] = [stats_dict_i[key]]
+            results = []
+
+            def create_data_dict(idx, data, val_data):
+                other_ids = [j for j in range(estimates.shape[1]) if j != idx]
+                x_train = torch.tensor(data[:, other_ids], dtype=torch.float32)
+                x_val = torch.tensor(val_data[:, other_ids], dtype=torch.float32)
+                y_train = torch.tensor(data[:, idx], dtype=torch.float32).reshape(-1, 1)
+                y_val = torch.tensor(val_data[:, idx], dtype=torch.float32).reshape(-1, 1)
+                return {'x_train': x_train, 'y_train': y_train, 'x_val': x_val, 'y_val': y_val}
+                
+            if not self.use_joblib_fit:
+                for i in trange(self.num_workers):
+                    result = train_neural_net(**create_data_dict(i, estimates_train, estimates_val),
+                                            neural_net=self.neural_nets[i], loss_fn_type=self.loss_fn_type,
+                                            lr=self.lr, weight_decay=self.weight_decay, patience=self.patience,
+                                            epochs=self.epochs, testing=testing)
+                    results.append(result)
             else:
-                for key in stats_dict_i:
-                    self.stats_dict[key].append(stats_dict_i[key])
+                results = Parallel(n_jobs=self.num_workers)(
+                                delayed(train_neural_net)(
+                                    **create_data_dict(i, estimates_train, estimates_val),
+                                    neural_net=self.neural_nets[i],
+                                    loss_fn_type=self.loss_fn_type,
+                                    lr=self.lr,
+                                    weight_decay=self.weight_decay,
+                                    patience=self.patience,
+                                    epochs=self.epochs,
+                                    testing=testing
+                                ) for i in range(self.num_workers)
+                            )
+            models = []
+            # self.stats_dict = {}
+            for i, (model, stats_dict_i) in enumerate(results):
+                models.append(model)
+                # if i == 0:
+                #     for key in stats_dict_i:
+                #         self.stats_dict[key] = [stats_dict_i[key]]
+                # else:
+                #     for key in stats_dict_i:
+                #         self.stats_dict[key].append(stats_dict_i[key])
+            self.fold_models.append(models)
     
     def predict(self, estimates: np.ndarray, testing=False) -> np.ndarray:
         # estimates = self.scaler.transform(estimates)
         if self.logits:
             sigmoid = lambda x: 1/(1+np.exp(-x))
             estimates = sigmoid(estimates)
-        estimates_tensor = torch.tensor(estimates, dtype=torch.float32)
+        # estimates_tensor = torch.tensor(estimates, dtype=torch.float32)
         preds = np.zeros(estimates.shape)*np.nan
-        for i in range(estimates.shape[1]):
-            self.models[i].eval()
-            x_test = estimates_tensor[:, [j for j in range(estimates.shape[1]) if j != i]]
-            if self.loss_fn_type == "bce_logit":
-                preds[:,i] = torch.sigmoid(self.models[i](x_test)).detach().numpy().flatten()
-            elif self.loss_fn_type == "mse":
-                preds[:,i] = self.models[i](x_test).detach().numpy().flatten()
-            else:
-                raise ValueError(f"loss_fn_type={self.loss_fn_type} not recognized")
+
+        for fold in range(self.folds):
+            len_ests = estimates.shape[0]
+            val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
+            estimates_val = estimates[val_idx]
+            for i in range(estimates.shape[1]):
+                self.fold_models[fold, i].eval()
+                estimates_tensor = torch.tensor(estimates_val, dtype=torch.float32)
+                x_test = estimates_tensor[:, [j for j in range(estimates.shape[1]) if j != i]]
+                if self.loss_fn_type == "bce":
+                    preds[val_idx,i] = \
+                        torch.sigmoid(self.fold_models[fold, i](x_test)).detach().numpy().flatten()
+                elif self.loss_fn_type == "mse":
+                    preds[val_idx,i] = self.fold_models[fold, i](x_test).detach().numpy().flatten()
+                else:
+                    raise ValueError(f"loss_fn_type={self.loss_fn_type} not recognized")
         # preds = self.scaler.inverse_transform(preds)
         group_ests = np.mean(preds, axis=1)
         labels = np.array(group_ests > 0.5, dtype=np.int32)
