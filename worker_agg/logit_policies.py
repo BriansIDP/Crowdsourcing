@@ -207,7 +207,7 @@ class EM_GMM:
 
 class AvgSSLPreds:
     def __init__(self, 
-                 neural_nets: nn.Module,
+                 neural_net_cons,
                  num_workers: int,
                  loss_fn_type: str="bce_logit",
                  lr: float=1e-3, 
@@ -220,9 +220,10 @@ class AvgSSLPreds:
                  folds: int=5
                  ) -> None:
         print(f"lr: {lr}, weight_decay: {weight_decay}, patience: {patience}, epochs: {epochs}")
-        self.neural_nets = neural_nets
+        # self.neural_nets = neural_nets
+        self.neural_net_cons = neural_net_cons
         self.num_workers = num_workers
-        assert len(self.neural_nets) == self.num_workers
+        # assert len(self.neural_nets) == self.num_workers
         self.loss_fn_type = loss_fn_type
         self.lr = lr
         self.weight_decay = weight_decay
@@ -242,6 +243,7 @@ class AvgSSLPreds:
             estimates = sigmoid(estimates)
         self.fold_models = []
         for fold in range(self.folds):
+            print(f"fold: {fold}")
             len_ests = estimates.shape[0]
             val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
             train_idx = np.array([i for i in range(len_ests) if i not in val_idx])
@@ -263,7 +265,7 @@ class AvgSSLPreds:
             if not self.use_joblib_fit:
                 for i in trange(self.num_workers):
                     result = train_neural_net(**create_data_dict(i, estimates_train, estimates_val),
-                                            neural_net=self.neural_nets[i], loss_fn_type=self.loss_fn_type,
+                                            neural_net=self.neural_net_cons(), loss_fn_type=self.loss_fn_type,
                                             lr=self.lr, weight_decay=self.weight_decay, patience=self.patience,
                                             epochs=self.epochs, testing=testing)
                     results.append(result)
@@ -271,7 +273,7 @@ class AvgSSLPreds:
                 results = Parallel(n_jobs=self.num_workers)(
                                 delayed(train_neural_net)(
                                     **create_data_dict(i, estimates_train, estimates_val),
-                                    neural_net=self.neural_nets[i],
+                                    neural_net=self.neural_net_cons(),
                                     loss_fn_type=self.loss_fn_type,
                                     lr=self.lr,
                                     weight_decay=self.weight_decay,
@@ -301,18 +303,20 @@ class AvgSSLPreds:
         preds = np.zeros(estimates.shape)*np.nan
 
         for fold in range(self.folds):
+            print(f"fold: {fold}")
             len_ests = estimates.shape[0]
             val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
             estimates_val = estimates[val_idx]
+            print("estimates_val.shape", estimates_val.shape)
             for i in range(estimates.shape[1]):
-                self.fold_models[fold, i].eval()
+                self.fold_models[fold][i].eval()
                 estimates_tensor = torch.tensor(estimates_val, dtype=torch.float32)
                 x_test = estimates_tensor[:, [j for j in range(estimates.shape[1]) if j != i]]
                 if self.loss_fn_type == "bce":
                     preds[val_idx,i] = \
-                        torch.sigmoid(self.fold_models[fold, i](x_test)).detach().numpy().flatten()
+                        torch.sigmoid(self.fold_models[fold][i](x_test)).detach().numpy().flatten()
                 elif self.loss_fn_type == "mse":
-                    preds[val_idx,i] = self.fold_models[fold, i](x_test).detach().numpy().flatten()
+                    preds[val_idx,i] = self.fold_models[fold][i](x_test).detach().numpy().flatten()
                 else:
                     raise ValueError(f"loss_fn_type={self.loss_fn_type} not recognized")
         # preds = self.scaler.inverse_transform(preds)

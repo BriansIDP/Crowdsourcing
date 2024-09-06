@@ -42,10 +42,12 @@ def get_policy(cfg, context_len=None):
             policy = policy_constructor(**cfg.policy.params, num_workers=num_workers)
     else:
         if cfg.policy.name == 'AvgSSLPreds':
-            neural_nets = [neural_net_constructor(input_size=num_workers-1, 
-                                    **cfg.neural_net.params) for _ in range(num_workers)]
+            # neural_nets = [neural_net_constructor(input_size=num_workers-1, 
+            #                         **cfg.neural_net.params) for _ in range(num_workers)]
+            neural_net_cons = lambda: neural_net_constructor(input_size=num_workers-1, 
+                                                             **cfg.neural_net.params)
             policy = policy_constructor(**cfg.policy.params, num_workers=num_workers,
-                                        neural_nets=neural_nets, 
+                                        neural_net_cons=neural_net_cons, 
                                         use_joblib_seeds=cfg.main.use_joblib_seeds)
         else: policy = policy_constructor(**cfg.policy.params, num_workers=num_workers)
     return policy
