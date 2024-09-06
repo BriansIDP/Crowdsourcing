@@ -8,7 +8,7 @@ defaults:
 main:
   seed_split: 42069
   data_split: 'train'
-  use_joblib_seeds: False
+  use_joblib_multirun: False
 
 eval:
   epoch: ${main.eval.epoch}

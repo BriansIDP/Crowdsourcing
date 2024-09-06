@@ -7,10 +7,12 @@ import torch
 import torch.nn as nn
 from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader
 
 from .utils import find_kl_gaussians
 from .utils import gaussian_log_likelihood
 from .utils import TwoLayerMLP, train_neural_net
+from .utils import CustomDataset, train_neural_net_with_loaders
 
 class EMGaussian:
 
@@ -215,7 +217,7 @@ class AvgSSLPreds:
                  patience: int=20,
                  epochs: int=1000,
                  use_joblib_fit: bool=False,
-                 use_joblib_seeds: bool=True,
+                 use_joblib_multirun: bool=True,
                  logits: bool=True,
                  folds: int=5
                  ) -> None:
@@ -229,7 +231,7 @@ class AvgSSLPreds:
         self.weight_decay = weight_decay
         self.patience = patience
         self.epochs = epochs
-        if use_joblib_seeds:
+        if use_joblib_multirun:
             assert not use_joblib_fit
         self.use_joblib_fit = use_joblib_fit
         self.logits = logits
@@ -347,3 +349,141 @@ class Averaging:
         else:
             labels = np.array(group_ests > 0, dtype=np.int32)
         return labels
+
+class AvgSSLPredsContextVec:
+    def __init__(self, 
+                 neural_net_cons,
+                 num_workers: int,
+                 seed: int,
+                 batch_size: int=100,
+                 loss_fn_type: str="bce",
+                 lr: float=1e-3, 
+                 weight_decay: float=1e-5,
+                 patience: int=20,
+                 max_grad_steps: int=1000,
+                 use_joblib_fit: bool=False,
+                 use_joblib_multirun: bool=True,
+                 eval_interval: int=100,
+                 lr_scheduler_type: str='constant',
+                 folds: int=5) -> None:
+        self.neural_net_cons = neural_net_cons
+        self.seed = seed
+        self.num_workers = num_workers
+        self.batch_size = batch_size
+        self.loss_fn_type = loss_fn_type
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.patience = patience
+        self.max_grad_steps = max_grad_steps
+        if use_joblib_multirun:
+            assert not use_joblib_fit
+        self.use_joblib_multirun = use_joblib_multirun
+        self.use_joblib_fit = use_joblib_fit
+        self.eval_interval = eval_interval
+        self.lr_scheduler_type = lr_scheduler_type
+        self.folds = folds
+    
+    def create_collate_fn(self, i: int):
+        def collate_fn(batch):
+            contexts, ests, _ = zip(*batch)
+            other_ids = [j for j in range(len(self.models)) if j!=i]
+            ests = torch.stack(ests)
+            other_ests = ests[:, other_ids].float()
+            x = torch.cat((contexts, other_ests), dim=1)
+            if self.loss_fn_type == 'bce':
+                y = ests[:, i:i+1].long()
+            elif self.loss_fn_type == 'mse':
+                y = ests[:, i:i+1].float()
+            else:
+                raise ValueError("loss_fn_type should be 'bce' or 'mse'")
+            return x, y
+        return collate_fn
+    
+    def fit(self, ests: np.ndarray, contexts: np.ndarray) -> None:
+        def fit_i(i):
+            train_dataloader = DataLoader(
+                train_data,
+                batch_size=self.batch_size,
+                shuffle=True,
+                collate_fn=self.create_collate_fn(i),
+                # generator=rng,
+            )
+            val_dataloader = DataLoader(
+                val_data,
+                batch_size=len(val_data),
+                shuffle=False,
+                collate_fn=self.create_collate_fn(i),
+            )
+            result = train_neural_net_with_loaders(
+                        neural_net=self.neural_net_cons(),
+                        train_loader=train_dataloader, 
+                        val_loader=val_dataloader,
+                        lr=self.lr, 
+                        weight_decay=self.weight_decay, 
+                        patience=self.patience,
+                        max_grad_steps=self.max_grad_steps,
+                        loss_fn_type=self.loss_fn_type,
+                        lr_scheduler_type=self.lr_scheduler_type,
+                        eval_interval=self.eval_interval,
+                        use_joblib_fit=self.use_joblib_fit,
+                        use_joblib_multirun=self.use_joblib_multirun,)
+            return result
+
+        # rng = torch.Generator().manual_seed(self.seed)
+        self.fold_models = []
+        for fold in range(self.folds):
+            print(f"fold: {fold}")
+            len_ests = ests.shape[0]
+            val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
+            train_idx = np.array([i for i in range(len_ests) if i not in val_idx])
+            ests_train = ests[train_idx]
+            ests_val = ests[val_idx]
+            contexts_train = contexts[train_idx]
+            contexts_val = contexts[val_idx]
+            rng = np.random.default_rng(self.seed)
+            perm = rng.permutation(ests_train.shape[0])
+            train_data = CustomDataset(contexts_train[perm], ests_train[perm])
+            val_data = CustomDataset(contexts_val, ests_val)
+            results = []
+            if not self.use_joblib_fit:
+                for i in range(len(self.models)):
+                    print(f"Training model {i}")
+                    results.append(fit_i(i))
+            else:
+                results = Parallel(n_jobs=ests.shape[1])(
+                                delayed(fit_i)(i) for i in range(len(self.models))
+                            )
+            models = []
+            for model, _ in enumerate(results):
+                models.append(model)
+            self.fold_models.append(models)
+
+    def predict(self, ests: np.ndarray, 
+                contexts: np.ndarray, testing: bool=False):
+        ssl_preds = []
+        group_ests = []
+        for fold in range(self.folds):
+            len_ests = ests.shape[0]
+            val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
+            ests_val = torch.tensor(ests[val_idx])
+            contexts_val = torch.tensor(contexts[val_idx])
+            ssl_preds_ = []
+            for i in range(self.num_workers):
+                self.fold_models[fold][i].eval()
+                other_ids = [j for j in range(len(self.models)) if j!=i]
+                other_ests = ests_val[:, other_ids].float()
+                x_val = torch.cat((contexts_val, other_ests), dim=1)
+                if self.loss_fn_type == 'bce':
+                    ssl_preds_.append(torch.sigmoid(self.fold_models[fold][i](x_val)).view(-1))
+                elif self.loss_fn_type == 'mse':
+                    ssl_preds_.append(self.fold_models[fold][i](x_val).view(-1))
+                else:
+                    raise ValueError("loss_fn_type should be 'bce' or 'mse'")
+            ssl_preds_ = torch.stack(ssl_preds_).transpose(1, 0).detach().numpy()
+            ssl_preds = np.concatenate((ssl_preds, ssl_preds_)) if len(ssl_preds)>0 else ssl_preds_
+            group_ests_ = torch.mean(ssl_preds, dim=1).detach().numpy()
+            group_ests = np.concatenate((group_ests, group_ests_)) if len(group_ests)>0 else group_ests_
+        if not testing:
+            return group_ests
+        else:
+            return group_ests, ssl_preds
