@@ -41,7 +41,7 @@ class GTAsFeature:
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
         # ests = torch.stack(ests).to(self.device)
         outcomes = torch.stack(outcomes).to(self.device)
-        return (inputs, outcomes), outcomes
+        return (inputs, outcomes.float()), outcomes
 
     def fit(self, train_data, val_data):
         train_dataloader = DataLoader(
@@ -71,6 +71,6 @@ class GTAsFeature:
         finetuner.run()
 
     def predict(self, inputs, outcomes):
-        logits = self.model(inputs, outcomes)
+        logits = self.model((inputs, outcomes.float())).detach().squeeze()
         preds = (logits>0).int().detach()
-        return preds
+        return preds, torch.sigmoid(logits)

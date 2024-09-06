@@ -1,24 +1,15 @@
-python main.py policy=majority_vote data_loader=truthfulqa_bin
--- acc=0.838, f1=0.813
-python main.py --multirun policy=em_sym_bin "policy.params.seed=range(5)" data_loader=truthfulqa_bin
--- acc=0.838, f1=0.813
-python main.py --multirun policy=em_asym_bin "policy.params.seed=range(5)" data_loader=truthfulqa_bin
--- acc=0.841, f1=0.822
-python main.py  
--- acc=0.845
-
 data_loader_params=(
     "data_loader=halu_dial_bin_lm"
     "data_loader.params.data_path='data/truthfulQA/truthful_qa.json'"
     "data_loader.params.task=truthfulqa"
     "data_loader.params.evidence_llm=['hermes70B','llama370B','mixtral','athene','qwen272B']"
-    "data_loader.params.cross_val=False"
+    "data_loader.params.cross_val=True"
     "data_loader.params.nfolds=5"
 )
 
 policy_params=(
-    "policy=lm_mv"
-    "policy.params.model_dir='exp/truthfulqa/lm_mv'"
+    "policy=lm_gt"
+    "policy.params.model_dir='exp/truthfulqa/lm_gt/2024-09-05_16-13-08'"
     "policy.params.lr=1e-5"
     "policy.params.weight_decay=0"
     "policy.params.batch_size=8"
@@ -26,7 +17,7 @@ policy_params=(
     "policy.params.log_interval=200"
 )
 
-    "policy.params.model_dir='exp/truthfulqa/lm_gt/2024-09-05_16-13-08'"
+    "policy.params.model_dir='exp/truthfulqa/lm_gt'"
 
 neural_net_params=(
     "neural_net=lm_plus_one_layer"
