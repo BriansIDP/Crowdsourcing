@@ -198,6 +198,7 @@ class FinetuneLM:
                             self.model_dir + '/train.log')
                 self.load_checkpoint(best_epoch)
                 break
+        self.load_checkpoint(best_epoch)
 
     def train_one_epoch(self, epoch,):
         self.optimizer.zero_grad()

@@ -242,18 +242,14 @@ class HaluDialBinaryLM(Dataset):
             if split < 0.9:
                 start = int(len(self.data) * split)
                 end = int(len(self.data) * (split + 0.1))
-                if self.evalmode:
-                    self.data = self.data[start:end]
-                else:
-                    self.data = self.data[:start] + self.data[end:]
         else:
             len_data = len(self.data)
-            val_idx = np.arange(int(fold*len_data/self.folds), int((fold+1)*len_data/self.folds))
-            train_idx = np.array([i for i in range(len_data) if i not in val_idx])
-            if self.evalmode:
-                self.data = self.data[val_idx]
-            else:
-                self.data = self.data[train_idx]
+            start = int(fold*len_data/self.nfolds)
+            end = int((fold+1)*len_data/self.nfolds)
+        if self.evalmode:
+            self.data = self.data[start:end]
+        else:
+            self.data = self.data[:start] + self.data[end:]
 
         self.with_gt = with_gt
         self.task = task

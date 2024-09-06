@@ -141,7 +141,8 @@ def main(cfg):
         labels = []
         preds = []
         probs = []
-        for fold in range(cfg.data_loader.params.num_folds):
+        for fold in range(cfg.data_loader.params.nfolds):
+            print(f"Fold {fold}")
             policy, model_dir = get_policy(cfg, top_model_dir, fold)
             # please dump the config file to the model_dir
             with open(os.path.join(model_dir, 'model_config.yaml'), 'w') as f:
@@ -171,20 +172,22 @@ def main(cfg):
                 acc = np.mean(labels_ == preds_)
                 f1 = f1_score(labels_, preds_)
                 roc_auc = roc_auc_score(labels_, probs_)
+                print("Fold: ", fold)
                 print(f"{split_type} accuracy: {acc}")
                 print(f"{split_type} f1: {f1}")
                 print(f"{split_type} roc_auc: {roc_auc}")
         labels = np.concatenate(labels)
         preds = np.concatenate(preds)
-        # dump the labels and probs
-        np.save(os.path.join(top_model_dir, 'labels.npy'), labels)
-        np.save(os.path.join(top_model_dir, 'probs.npy'), probs)
+        probs = np.concatenate(probs)
         f1 = f1_score(labels, preds)
         acc = np.mean(labels == preds)
         roc_auc = roc_auc_score(labels, probs)
         print(f"Overall accuracy: {acc}")
         print(f"Overall f1: {f1}")
         print(f"Overall roc_auc: {roc_auc}")
+        # dump the labels and probs
+        np.save(os.path.join(top_model_dir, 'labels.npy'), labels)
+        np.save(os.path.join(top_model_dir, 'probs.npy'), probs)
 
 if __name__ == "__main__":
     main()

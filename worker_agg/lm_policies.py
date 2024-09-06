@@ -102,7 +102,8 @@ class LMMajVote:
                  lr_scheduler_type: str='cosine',
                  log_interval: int=100,
                  batch_size: int=16,
-                 patience: int=2
+                 patience: int=2,
+                 dropout_prob: float=0.1
                  ) -> None:
         self.model = model
         # self.num_workers = num_workers
@@ -152,7 +153,7 @@ class LMMajVote:
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
-                               patience=self.patience)
+                               patience=self.patience,)
         finetuner.run()
 
     def predict(self, inputs, ests):

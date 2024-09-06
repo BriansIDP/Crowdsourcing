@@ -1,4 +1,5 @@
 import os
+from typing import Union
 
 from transformers import AutoTokenizer
 from torch.nn.utils.rnn import pad_sequence
@@ -9,17 +10,19 @@ import numpy as np
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
+from sklearn.metrics import f1_score, roc_auc_score
 
 from worker_agg import LMplusOneLayer
 import worker_agg
 
-def get_data(cfg, split_type='train', with_gt=False):
+def get_data(cfg, split_type='train', with_gt: bool=False, 
+             fold: Union[int, None]=None):
     data_constructor = worker_agg.__dict__[cfg.data_loader.name]
     data_dict = OmegaConf.to_container(cfg.data_loader.params, resolve=True, throw_on_missing=True)
     if split_type == 'val':
         data_dict['evalmode'] = True
     data_dict['with_gt'] = with_gt
+    data_dict['fold'] = fold
     data = data_constructor(**data_dict)
     return data
 
@@ -29,39 +32,33 @@ def eval_model(cfg, model, dataloader):
 
     # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
     #     with record_function("model_inference"):
+    labels = []
     probs = []
-    all_labels = []
     for i, batch in enumerate(tqdm(dataloader)):
-        inputs, ests, labels = batch
-        all_labels.append(labels.detach())
+        inputs, ests, labels_ = batch
+        labels.append(labels_.detach().squeeze().detach().cpu())
         if cfg.neural_net.name in ['MultiHeadNet']:
-            preds = model((inputs, ests), predict_gt=True)
-            probs.append(preds.detach())
-            preds = (preds > 0.5).int()
+            probs_ = model((inputs, ests), predict_gt=True).squeeze().detach().cpu()
         elif cfg.neural_net.name in ['CrowdLayerNN']:
-            preds = model(inputs, predict_gt=True)
-            probs.append(preds.detach())
-            preds = (preds > 0.5).int()
+            probs_ = model(inputs, predict_gt=True).squeeze().detach().cpu()
         elif cfg.neural_net.name in ['LMplusOneLayer']:
-            logits = model(inputs)
-            probs.append(torch.sigmoid(logits.detach()))
-            preds = (logits > 0).int()
+            probs_ = torch.sigmoid(model(inputs)).squeeze().detach().cpu()
         elif cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
-            logits = model(inputs, labels.float())
-            probs.append(torch.sigmoid(logits.detach()))
-            preds = (logits > 0).int()
+            probs_ = torch.sigmoid(model(inputs, labels.float())).squeeze().detach().cpu()
         elif cfg.neural_net.name=='CombinedModel':
-            logits = model((inputs, ests))
-            probs.append(torch.sigmoid(logits.detach()))
-            preds = (logits > 0).int()
-        hits += sum(labels.view(-1) == preds.view(-1))
-        total += preds.size(0)
+            probs_ = torch.sigmoid(model((inputs, ests))).squeeze().detach().cpu()
+        probs.append(probs_)
+        # preds.append((probs_ > 0.5).int())
+        # hits += sum(labels.view(-1) == preds.view(-1))
+        # total += preds.size(0)
+    # probs = torch.cat(probs, dim=0)
+    # all_labels = torch.cat(all_labels, dim=0)
     probs = torch.cat(probs, dim=0)
-    all_labels = torch.cat(all_labels, dim=0)
+    labels = torch.cat(labels, dim=0)
+    preds = (probs > 0.5).int()
 
     # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-    acc = hits / total
-    return acc, probs, all_labels
+    return labels, preds, probs
 
 # def eval_policy(cfg, policy, dataloader):
 #     hits = 0
@@ -118,24 +115,59 @@ def main(cfg):
                                     num_workers=num_workers)
     else:
         model = model_constructor(**cfg.neural_net.params)
-    model_dir = cfg.policy.params.model_dir
-    epoch = cfg.eval.epoch
-    load_checkpoint(model, model_dir, epoch)
-    model.eval()
-    probs_com = []
-    for split_type in ['val', 'train']:
-        data = get_data(cfg, split_type=split_type, with_gt=True)
-        dataloader = DataLoader(
-                    data,
-                    batch_size=cfg.policy.params.batch_size,
-                    shuffle=False,
-                    collate_fn=data.collate_fn,
-                )
-        acc, probs, _ = eval_model(cfg, model, dataloader)
-        probs_com.append(probs)
-        print(f"{split_type} accuracy: {acc}")
-    probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
-    np.save(f"{model_dir}/probs.npy", probs_com)
+    if not cfg.data_loader.params.cross_val:
+        model_dir = cfg.policy.params.model_dir
+        epoch = cfg.eval.epoch
+        load_checkpoint(model, model_dir, epoch)
+        model.eval()
+        probs_com = []
+        for split_type in ['val', 'train']:
+            data = get_data(cfg, split_type=split_type, with_gt=True)
+            dataloader = DataLoader(
+                        data,
+                        batch_size=cfg.policy.params.batch_size,
+                        shuffle=False,
+                        collate_fn=data.collate_fn,
+                    )
+            labels, preds, probs = eval_model(cfg, model, dataloader)
+            probs_com.append(probs)
+            acc = torch.mean((labels == preds).float()).item()
+            print(f"{split_type} accuracy: {acc}")
+        probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
+        np.save(f"{model_dir}/probs.npy", probs_com)
+    else:
+        model_dir = cfg.policy.params.model_dir
+        epochs = cfg.eval.epochs
+        labels = []
+        preds = []
+        probs = []
+        for fold in range(cfg.data_loader.params.nfolds):
+            print(f"Fold {fold}")
+            model_dir_fold = os.path.join(model_dir, f"fold_{fold}")
+            load_checkpoint(model, model_dir_fold, epochs[fold])
+            data = get_data(cfg, split_type='val', with_gt=True, fold=fold)
+            dataloader = DataLoader(
+                        data,
+                        batch_size=cfg.policy.params.batch_size,
+                        shuffle=False,
+                        collate_fn=data.collate_fn,
+                    )
+            labels_, preds_, probs_ = eval_model(cfg, model, dataloader)
+            labels.append(labels_.numpy())
+            preds.append(preds_.numpy())
+            probs.append(probs_.numpy())
+        labels = np.concatenate(labels)
+        preds = np.concatenate(preds)
+        probs = np.concatenate(probs)
+        f1 = f1_score(labels, preds)
+        acc = np.mean(labels == preds)
+        roc_auc = roc_auc_score(labels, probs)
+        print(f"Overall accuracy: {acc}")
+        print(f"Overall f1: {f1}")
+        print(f"Overall roc_auc: {roc_auc}")
+        # dump the labels and probs
+        np.save(os.path.join(model_dir, 'labels.npy'), labels)
+        np.save(os.path.join(model_dir, 'probs.npy'), probs)
 
     # policy_constructor = worker_agg.__dict__[cfg.policy.name]
     # model_constructor = worker_agg.__dict__[cfg.neural_net.name]
