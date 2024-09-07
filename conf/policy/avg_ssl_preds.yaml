@@ -8,3 +8,4 @@ params:
   loss_fn_type: "mse"
   logits: True
   folds: 5
+  fold: Null

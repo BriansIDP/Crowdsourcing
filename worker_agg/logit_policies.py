@@ -219,7 +219,8 @@ class AvgSSLPreds:
                  use_joblib_fit: bool=False,
                  use_joblib_multirun: bool=True,
                  logits: bool=True,
-                 folds: int=5
+                 folds: int=5,
+                 fold: Union[int, None]=None
                  ) -> None:
         print(f"lr: {lr}, weight_decay: {weight_decay}, patience: {patience}, epochs: {epochs}")
         # self.neural_nets = neural_nets
@@ -236,6 +237,7 @@ class AvgSSLPreds:
         self.use_joblib_fit = use_joblib_fit
         self.logits = logits
         self.folds = folds
+        self.fold = fold
     
     def fit(self, estimates: np.ndarray, testing=False) -> None:
         # self.scaler = StandardScaler()
@@ -245,6 +247,9 @@ class AvgSSLPreds:
             estimates = sigmoid(estimates)
         self.fold_models = []
         for fold in range(self.folds):
+            if self.fold is not None and fold != self.fold:
+                self.fold_models.append([None]*self.num_workers)
+                continue
             print(f"fold: {fold}")
             len_ests = estimates.shape[0]
             val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
@@ -296,7 +301,7 @@ class AvgSSLPreds:
                 #         self.stats_dict[key].append(stats_dict_i[key])
             self.fold_models.append(models)
     
-    def predict(self, estimates: np.ndarray, testing=False) -> np.ndarray:
+    def predict(self, estimates: np.ndarray, testing=False,) -> np.ndarray:
         # estimates = self.scaler.transform(estimates)
         if self.logits:
             sigmoid = lambda x: 1/(1+np.exp(-x))
@@ -304,37 +309,56 @@ class AvgSSLPreds:
         # estimates_tensor = torch.tensor(estimates, dtype=torch.float32)
         preds = np.zeros(estimates.shape)*np.nan
 
-        for fold in range(self.folds):
+        if self.fold is None:
+            for fold in range(self.folds):
+                print(f"fold: {fold}")
+                len_ests = estimates.shape[0]
+                val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
+                estimates_val = estimates[val_idx]
+                print("estimates_val.shape", estimates_val.shape)
+                for i in range(estimates.shape[1]):
+                    self.fold_models[fold][i].eval()
+                    estimates_tensor = torch.tensor(estimates_val, dtype=torch.float32)
+                    x_test = estimates_tensor[:, [j for j in range(estimates.shape[1]) if j != i]]
+                    if self.loss_fn_type == "bce":
+                        preds[val_idx,i] = \
+                            torch.sigmoid(self.fold_models[fold][i](x_test)).detach().numpy().flatten()
+                    elif self.loss_fn_type == "mse":
+                        preds[val_idx,i] = self.fold_models[fold][i](x_test).detach().numpy().flatten()
+                    else:
+                        raise ValueError(f"loss_fn_type={self.loss_fn_type} not recognized")
+            # preds = self.scaler.inverse_transform(preds)
+        else:
+            fold = self.fold
             print(f"fold: {fold}")
-            len_ests = estimates.shape[0]
-            val_idx = np.arange(int(fold*len_ests/self.folds), int((fold+1)*len_ests/self.folds))
-            estimates_val = estimates[val_idx]
-            print("estimates_val.shape", estimates_val.shape)
             for i in range(estimates.shape[1]):
                 self.fold_models[fold][i].eval()
-                estimates_tensor = torch.tensor(estimates_val, dtype=torch.float32)
+                estimates_tensor = torch.tensor(estimates, dtype=torch.float32)
                 x_test = estimates_tensor[:, [j for j in range(estimates.shape[1]) if j != i]]
                 if self.loss_fn_type == "bce":
-                    preds[val_idx,i] = \
+                    preds[:,i] = \
                         torch.sigmoid(self.fold_models[fold][i](x_test)).detach().numpy().flatten()
                 elif self.loss_fn_type == "mse":
-                    preds[val_idx,i] = self.fold_models[fold][i](x_test).detach().numpy().flatten()
+                    preds[:,i] = self.fold_models[fold][i](x_test).detach().numpy().flatten()
                 else:
                     raise ValueError(f"loss_fn_type={self.loss_fn_type} not recognized")
-        # preds = self.scaler.inverse_transform(preds)
         group_ests = np.mean(preds, axis=1)
         labels = np.array(group_ests > 0.5, dtype=np.int32)
         if testing:
             return labels, group_ests, preds
-        return labels
+        return labels, group_ests
 
 class Averaging:
     def __init__(self,
             num_workers: int,
-            apply_sigmoid: bool=False) -> None:
+            apply_sigmoid: bool=False,
+            logits: bool=True) -> None:
         self.num_workers = num_workers
         self.apply_sigmoid = apply_sigmoid
-        print(f"apply_sigmoid: {apply_sigmoid}")
+        # print(f"apply_sigmoid: {apply_sigmoid}")
+        self.logits = logits
+        if not self.logits:
+            assert not self.apply_sigmoid, "apply_sigmoid should be False when logits is False"
     
     def fit(self, estimates: np.ndarray) -> None:
         pass
@@ -344,11 +368,14 @@ class Averaging:
             sigmoid = lambda x: 1/(1+np.exp(-x))
             estimates = sigmoid(estimates)
         group_ests = np.mean(estimates, axis=1)
-        if self.apply_sigmoid:
-            labels = np.array(group_ests > 0.5, dtype=np.int32)
+        if self.logits:
+            if self.apply_sigmoid:
+                labels = np.array(group_ests > 0.5, dtype=np.int32)
+            else:
+                labels = np.array(group_ests > 0, dtype=np.int32)
         else:
-            labels = np.array(group_ests > 0, dtype=np.int32)
-        return labels
+            labels = np.array(group_ests > 0.5, dtype=np.int32)
+        return labels, group_ests
 
 class AvgSSLPredsContextVec:
     def __init__(self, 
@@ -385,13 +412,15 @@ class AvgSSLPredsContextVec:
     
     def create_collate_fn(self, i: int):
         def collate_fn(batch):
-            contexts, ests, _ = zip(*batch)
-            other_ids = [j for j in range(len(self.models)) if j!=i]
+            contexts, ests = zip(*batch)
+            contexts = torch.stack(contexts)
+            other_ids = [j for j in range(self.num_workers) if j!=i]
             ests = torch.stack(ests)
             other_ests = ests[:, other_ids].float()
             x = torch.cat((contexts, other_ests), dim=1)
+            # x = torch.cat((torch.tensor(contexts), other_ests), dim=1)
             if self.loss_fn_type == 'bce':
-                y = ests[:, i:i+1].long()
+                y = ests[:, i:i+1].float()
             elif self.loss_fn_type == 'mse':
                 y = ests[:, i:i+1].float()
             else:
@@ -446,15 +475,15 @@ class AvgSSLPredsContextVec:
             val_data = CustomDataset(contexts_val, ests_val)
             results = []
             if not self.use_joblib_fit:
-                for i in range(len(self.models)):
+                for i in range(self.num_workers):
                     print(f"Training model {i}")
                     results.append(fit_i(i))
             else:
                 results = Parallel(n_jobs=ests.shape[1])(
-                                delayed(fit_i)(i) for i in range(len(self.models))
+                                delayed(fit_i)(i) for i in range(self.num_workers)
                             )
             models = []
-            for model, _ in enumerate(results):
+            for model, _ in results:
                 models.append(model)
             self.fold_models.append(models)
 
@@ -470,7 +499,7 @@ class AvgSSLPredsContextVec:
             ssl_preds_ = []
             for i in range(self.num_workers):
                 self.fold_models[fold][i].eval()
-                other_ids = [j for j in range(len(self.models)) if j!=i]
+                other_ids = [j for j in range(self.num_workers) if j!=i]
                 other_ests = ests_val[:, other_ids].float()
                 x_val = torch.cat((contexts_val, other_ests), dim=1)
                 if self.loss_fn_type == 'bce':
@@ -480,10 +509,14 @@ class AvgSSLPredsContextVec:
                 else:
                     raise ValueError("loss_fn_type should be 'bce' or 'mse'")
             ssl_preds_ = torch.stack(ssl_preds_).transpose(1, 0).detach().numpy()
+            assert ssl_preds_.shape == (len(val_idx), self.num_workers)
             ssl_preds = np.concatenate((ssl_preds, ssl_preds_)) if len(ssl_preds)>0 else ssl_preds_
-            group_ests_ = torch.mean(ssl_preds, dim=1).detach().numpy()
+            group_ests_ = np.mean(ssl_preds_, axis=1)
+            assert group_ests_.shape == (len(val_idx),)
             group_ests = np.concatenate((group_ests, group_ests_)) if len(group_ests)>0 else group_ests_
+        probs = group_ests.copy()
+        group_ests = (group_ests>0.5).astype(np.int32)
         if not testing:
-            return group_ests
+            return group_ests, probs
         else:
-            return group_ests, ssl_preds
+            return group_ests, probs, ssl_preds

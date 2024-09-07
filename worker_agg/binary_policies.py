@@ -83,7 +83,7 @@ class EMSymmetricBinary:
     def predict(self, ests: np.ndarray):
         prob_1 = self.e_step(ests)
         group_ests = np.array(prob_1 > 0.5, dtype=np.int32)
-        return group_ests
+        return group_ests, prob_1
 
 class EMAsymmetricBinary:
     
@@ -185,7 +185,7 @@ class EMAsymmetricBinary:
     def predict(self, ests: np.ndarray):
         prob_1 = self.e_step(ests)
         group_ests = np.array(prob_1 > 0.5, dtype=np.int32)
-        return group_ests
+        return group_ests, prob_1
 
 class MajorityVote:
     

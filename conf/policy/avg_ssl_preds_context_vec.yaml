@@ -1,4 +1,5 @@
 name: "AvgSSLPredsContextVec"
+needs_context: True
 params:
   lr: 1e-3
   weight_decay: 1e-4
@@ -9,3 +10,4 @@ params:
   seed: 42
   lr_scheduler_type: 'constant'
   folds: 5
+  batch_size: 100
