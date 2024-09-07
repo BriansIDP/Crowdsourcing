@@ -369,7 +369,8 @@ class FinetuneMultiHeadNet():
             #                 self.model_dir + '/train.log')
             #     self.load_checkpoint(best_epoch)
             #     break
-    
+        for i in self.active_heads:
+            self.load_checkpoint(best_epochs[i], head_idx=i)    
 
     def set_require_grad(self,):
         """Set requires_grad=True only for the selected heads."""
