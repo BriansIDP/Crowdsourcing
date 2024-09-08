@@ -261,8 +261,9 @@ class AvgSSLPredsLM:
         input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(self.device)
         attn_mask = input_ids != 0
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
-        ests = torch.stack(ests).to(self.device).long()
+        ests = torch.stack(ests).to(self.device)
         if not self.probs:
+            ests = ests.long()
             return (inputs, ests), ests
         else:
             return (inputs, ests), torch.cat((1.0-ests.unsqueeze(1), ests.unsqueeze(1)), dim=1)

@@ -3,7 +3,7 @@ data_loader_params=(
     "data_loader.params.data_path='data/truthfulQA/truthful_qa.json'"
     "data_loader.params.task=truthfulqa"
     "data_loader.params.evidence_llm=['hermes70B','llama370B','mixtral','athene','qwen272B']"
-    "data_loader.params.cross_val=False"
+    "data_loader.params.cross_val=True"
     "data_loader.params.nfolds=5"
     "data_loader.params.probs=True"
 )
@@ -29,7 +29,24 @@ neural_net_params=(
 
 policy_params=(
     "policy=avg_ssl_preds_lm"
-    "policy.params.model_dir='exp/truthfulqa/pew_lm/'"
+    "policy.params.model_dir='exp/truthfulqa/pew_lm'"
+    "policy.params.lr=1e-4"
+    "policy.params.weight_decay=1e-5"
+    "policy.params.batch_size=16"
+    "policy.params.log_interval=100"
+    "policy.params.probs=True"
+)
+
+neural_net_params=(
+    "neural_net=multihead_net"
+    "neural_net.params.dropout_prob=0.1"
+    "neural_net.params.hidden_size_ow=128"
+    "neural_net.params.loss_fn_type='ce'"
+)
+
+policy_params=(
+    "policy=pew_no_ssl_sep_lms"
+    "policy.params.model_dir='exp/truthfulqa/pew_no_ssl_sep_lm'"
     "policy.params.lr=1e-4"
     "policy.params.weight_decay=1e-5"
     "policy.params.batch_size=16"
@@ -37,13 +54,15 @@ policy_params=(
 )
 
 neural_net_params=(
-    "neural_net=multihead_net"
-    "neural_net.params.dropout_prob=0.1"
-    "neural_net.params.hidden_size_ow=128"
-    "neural_net.params.loss_fn_type='mse'"
+    "neural_net=lm_plus_one_layer"
 )
 
 # Combine all parameters into one array
 all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_params[@]}")
 # Run the Python script with the combined parameters
 python main_nn.py "${all_params[@]}"
+
+# Combine all parameters into one array
+all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_params[@]}")
+# Run the Python script with the combined parameters
+python worker_agg/gen_embeddings.py "${all_params[@]}"
