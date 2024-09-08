@@ -3,4 +3,4 @@ params:
   datapath: "data/truthfulQA"
   # model_list: ["llama3", "starling", "mistral", "hermes2", "hermes25", "openorca", "zephyr"]
   model_list: ['hermes70B', 'llama370B', 'mixtral', 'athene', 'qwen272B']
-  logits: False
+  est_type: "binary"

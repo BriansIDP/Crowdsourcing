@@ -3,7 +3,7 @@ from .binary_policies import EMLogisticBinary, EMNeuralNetBinary, NeuralNetMajVo
 from .logit_policies import EMGaussian, EM_GMM, AvgSSLPreds, Averaging, AvgSSLPredsContextVec
 from .lm_policies import LMGroundTruth, LMMajVote, CrowdLayerLM, AvgSSLPredsLM
 from .lm_policies import AvgSSLPredsSepLMs, PEWNoSSLSepLMs, PEWNoSSL
-from .data_loaders import HaluDialogueBinary, HaluQABinary, HaluDialogueLogit, HaluDialogueProb
+from .data_loaders import HaluDial, HaluQABinary
 from .data_loaders import HaluDialEmbed, TruthfulQA
 from .data_loaders import SynLogisticData, SynTwoLayerMLPData
 from .data_loaders import HaluDialLM

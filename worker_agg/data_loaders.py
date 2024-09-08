@@ -10,10 +10,13 @@ from transformers import AutoTokenizer
 
 from .utils import TwoLayerMLP
 
-class HaluDialogueBinary:
-    def __init__(self, datapath, model_list):
+class HaluDial:
+    def __init__(self, datapath: str, 
+                 model_list: list, est_type: str):
         self.datapath = datapath
         self.model_list = model_list
+        assert est_type in ['binary', 'prob', 'logit']
+        self.est_type = est_type
 
     def get_data(self):
         est_dict = {}
@@ -26,62 +29,13 @@ class HaluDialogueBinary:
             for datapiece in modeldata:
                 outcome = 0 if datapiece["ref"] == "yes" else 1
                 outcomes.append(outcome)
-                est = np.argmax(datapiece["prob"])
-                est_dict[model].append(est)
-        ests = np.zeros((len(outcomes), len(self.model_list)))
-        for i, model in enumerate(self.model_list):
-            ests[:, i] = est_dict[model]
-        return ests, outcomes
-
-class HaluDialogueLogit:
-    def __init__(self, datapath, model_list):
-        self.datapath = datapath
-        self.model_list = model_list
-
-    def get_data(self):
-        est_dict = {}
-        for model in self.model_list:
-            hits = 0
-            est_dict[model] = []
-            outcomes = []
-            filepath = Path(self.datapath) / "halueval_dialogue_{}.json".format(model)
-            with open(filepath) as fin:
-                modeldata = json.load(fin)[model]
-            for datapiece in modeldata:
-                outcome = 0 if datapiece["ref"] == "yes" else 1
-                outcomes.append(outcome)
-                # est_dict[model].append(datapiece["prob"])
-                # est = np.argmax(datapiece["prob"])
-                est = np.log(datapiece["prob"][1] / datapiece["prob"][0])
-                est_dict[model].append(est)
-                # if datapiece["prob"][0] > datapiece["prob"][1] and outcome == 0:
-                #     hits += 1
-                # elif datapiece["prob"][1] > datapiece["prob"][0] and outcome == 1:
-                #     hits += 1
-            # print("{} Acc: {:.3f}".format(model, hits/len(est_dict[model])))
-        ests = np.zeros((len(outcomes), len(self.model_list)))
-        for i, model in enumerate(self.model_list):
-            ests[:, i] = est_dict[model]
-        return ests, outcomes
-
-class HaluDialogueProb:
-    def __init__(self, datapath, model_list):
-        self.datapath = datapath
-        self.model_list = model_list
-
-    def get_data(self):
-        est_dict = {}
-        for model in self.model_list:
-            hits = 0
-            est_dict[model] = []
-            outcomes = []
-            filepath = Path(self.datapath) / "halueval_dialogue_{}.json".format(model)
-            with open(filepath) as fin:
-                modeldata = json.load(fin)[model]
-            for datapiece in modeldata:
-                outcome = 0 if datapiece["ref"] == "yes" else 1
-                outcomes.append(outcome)
-                est = datapiece["prob"][1]
+                if self.est_type == 'binary':
+                    est = np.argmax(datapiece["prob"])
+                elif self.est_type == 'prob':
+                    est = datapiece["prob"][1]
+                elif self.est_type == 'logit':
+                    est = np.log(datapiece["prob"][1] / datapiece["prob"][0])
+                else: raise ValueError("Invalid est_type {}".format(self.est_type))
                 est_dict[model].append(est)
         ests = np.zeros((len(outcomes), len(self.model_list)))
         for i, model in enumerate(self.model_list):
@@ -296,10 +250,11 @@ class HaluDialLM(Dataset):
 
 class TruthfulQA:
     def __init__(self, datapath: str, model_list: list,
-                 logits: bool=False):
+                 est_type: str='binary'):
         self.datapath = datapath
         self.model_list = model_list
-        self.logits = logits
+        assert est_type in ['binary', 'prob', 'logit'], "Invalid ests_type {}".format(est_type)
+        self.est_type = est_type
 
     def get_data(self):
         filepath = Path(self.datapath) / "truthful_qa.json"
@@ -308,10 +263,14 @@ class TruthfulQA:
         ests = []
         outcomes = []
         for datap in data:
-            if self.logits:
+            if self.est_type == 'binary':
+                ests.append([datap[cllm][0]<0.5 for cllm in self.model_list])
+            elif self.est_type == 'prob':
+                ests.append([datap[cllm][1] for cllm in self.model_list])
+            elif self.est_type == 'logit':
                 ests.append([np.log(datap[cllm][1] / datap[cllm][0]) for cllm in self.model_list])
             else:
-                ests.append([datap[cllm][0]<0.5 for cllm in self.model_list])
+                raise ValueError("Invalid ests_type {}".format(self.est_type))
             outcomes.append(0 if datap['ref'] == 'yes' else 1)
         ests = np.array(ests)
         outcomes = np.array(outcomes)
