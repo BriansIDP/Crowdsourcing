@@ -119,8 +119,7 @@ class HaluQABinary:
         return ests, outcomes
 
 class HaluDialEmbed:
-    def __init__(self, filepath, model_list, 
-                 seed: int):
+    def __init__(self, filepath: str, model_list: list, seed: int,): 
         assert Path(filepath).exists()
         self.all_data = np.load(filepath)
         self.num_workers = len(model_list)
@@ -295,10 +294,12 @@ class HaluDialLM(Dataset):
         else:
             return inputs, ests
 
-class TruthfulQABinary:
-    def __init__(self, datapath, model_list):
+class TruthfulQA:
+    def __init__(self, datapath: str, model_list: list,
+                 logits: bool=False):
         self.datapath = datapath
         self.model_list = model_list
+        self.logits = logits
 
     def get_data(self):
         filepath = Path(self.datapath) / "truthful_qa.json"
@@ -307,8 +308,11 @@ class TruthfulQABinary:
         ests = []
         outcomes = []
         for datap in data:
-            ests.append([datap[cllm][0]>0.5 for cllm in self.model_list])
-            outcomes.append(1 if datap['ref'] == 'yes' else 0)
+            if self.logits:
+                ests.append([np.log(datap[cllm][1] / datap[cllm][0]) for cllm in self.model_list])
+            else:
+                ests.append([datap[cllm][0]<0.5 for cllm in self.model_list])
+            outcomes.append(0 if datap['ref'] == 'yes' else 1)
         ests = np.array(ests)
         outcomes = np.array(outcomes)
         return ests, outcomes

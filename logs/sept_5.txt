@@ -1,3 +1,10 @@
+python main.py policy=averaging data_loader=truthfulqa policy.params.logits=False
+-- acc=0.836, f1=0.855, roc_auc=0.897
+python main.py --multirun policy=em_sym_bin "policy.params.seed=range(5)" data_loader=truthfulqa
+-- acc=0.836, f1=0.855, roc_auc=0.898
+python main.py --multirun policy=em_asym_bin "policy.params.seed=range(5)" data_loader=truthfulqa
+-- acc=0.839, f1=0.854, roc_auc=0.898
+
 data_loader_params=(
     "data_loader=halu_dial_bin_lm"
     "data_loader.params.data_path='data/truthfulQA/truthful_qa.json'"
@@ -41,17 +48,59 @@ all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_param
 # Run the Python script with the combined parameters
 python worker_agg/gen_embeddings.py "${all_params[@]}"
 
+####################################################################################################
+AvgSSLPreds
+####################################################################################################
 
 data_loader_params=(
-    "data_loader=truthfulqa_bin"
+    "data_loader=truthfulqa"
+    "data_loader.params.logits=True"
+)
+
+policy_params=(
+    "policy=averaging"
+    "policy.params.logits=True"
+    "policy.params.apply_sigmoid=True"
 )
 
 policy_params=(
     "policy=avg_ssl_preds"
-    "policy.params.lr=1e-3"
-    "policy.params.weight_decay=1e-2"
+    "policy.params.lr=1e-1"
+    "policy.params.weight_decay=1e-1"
     "policy.params.loss_fn_type='bce'"
-    "policy.params.logits=False"
+    "policy.params.logits=True"
+    "policy.params.use_joblib_fit=True"
+)
+
+neural_net_params=(
+    "neural_net=two_layer_mlp"
+    "neural_net.params.hidden_size=100"
+    "neural_net.params.seed=0"
+)
+
+# Combine all parameters into one array
+all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_params[@]}")
+# Run the Python script with the combined parameters
+python main.py "${all_params[@]}"
+
+####################################################################################################
+AvgSSLPredsContextVec
+####################################################################################################
+
+data_loader_params=(
+    "data_loader=halu_dial_embed"
+    "data_loader.params.filepath='data/gpt2_embeddings_truthfulqa.npz'"
+    "data_loader.params.model_list=['hermes70B','llama370B','mixtral','athene','qwen272B']"
+    "data_loader.params.logits=True"
+    "data_loader.params.task='truthfulqa'"
+    "data_loader.params.logits_path='data/truthfulQA'"
+)
+
+policy_params=(
+    "policy=avg_ssl_preds_context_vec"
+    "policy.params.lr=1e-2"
+    "policy.params.weight_decay=1e-2"
+    "policy.params.batch_size=200"
     "policy.params.use_joblib_fit=True"
 )
 
