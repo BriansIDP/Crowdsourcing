@@ -203,7 +203,7 @@ class SynLogisticData:
         return ests, features, outcomes
 
 
-class HaluDialBinaryLM(Dataset):
+class HaluDialLM(Dataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(
@@ -219,6 +219,7 @@ class HaluDialBinaryLM(Dataset):
         cross_val: bool=False,
         nfolds: Union[int, None]=None,
         fold: Union[int, None]=None,
+        probs: bool=False,
     ):
         super().__init__()
         with open(data_path) as fin:
@@ -229,6 +230,7 @@ class HaluDialBinaryLM(Dataset):
         self.device = device
         self.cross_val = cross_val
         self.nfolds = nfolds
+        self.probs = probs
 
         # if split < 1.0:
         #     portion = int(len(self.data) * split)
@@ -261,7 +263,10 @@ class HaluDialBinaryLM(Dataset):
         return self.preprocessing(self.data[idx])
 
     def preprocessing(self, data):
-        ests = [data[cllm][0]<0.5 for cllm in self.evidence_llm]
+        if self.probs:
+            ests = [data[cllm][1] for cllm in self.evidence_llm]
+        else:
+            ests = [data[cllm][0]<0.5 for cllm in self.evidence_llm]
         outcomes = [0 if data['ref'] == 'yes' else 1]
         if self.task == 'halueval':
             input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])

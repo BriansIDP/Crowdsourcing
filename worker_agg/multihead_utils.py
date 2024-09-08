@@ -189,7 +189,8 @@ class MultiHeadNet(nn.Module):
 
     def forward(self, 
                 inputs: tuple,
-                predict_gt: bool=False) -> torch.Tensor:
+                predict_gt: bool=False,
+                testing: bool=False) -> torch.Tensor:
         if self.do_ssl:
             inputs, ests = inputs
         assert type(inputs) == dict, "Inputs must be a dictionary"
@@ -216,12 +217,15 @@ class MultiHeadNet(nn.Module):
                 preds = torch.cat((-preds, preds), dim=1)
             else:
                 # convert to probabilities
-                preds = torch.sigmoid(preds) # -preds because we want the other class
+                ssl_preds = torch.sigmoid(preds)
                 # avg over workers
-                preds = torch.mean(preds, dim=1)
+                preds = torch.mean(ssl_preds, dim=1)
         elif self.loss_fn_type == 'mse' and predict_gt:
             # preds are probabilities already
+            ssl_preds = preds.clone()
             preds = torch.mean(preds, dim=1)
+        if testing:
+            return preds, ssl_preds
         return preds
     
     def set_requires_grad_for_heads(self, active_heads):
@@ -243,6 +247,7 @@ class FinetuneMultiHeadNet():
                 gradient_accumulation_steps: int=1, num_warmup_steps: float=0.03,
                 num_train_epochs: int=10, lr_scheduler_type: str='cosine',
                 log_interval: int=100, patience: int=2, loss_fn_type='ce',
+                probs: bool=False
                 ) -> None:
         self.model = model
         self.train_dataloader = train_dataloader
@@ -260,6 +265,7 @@ class FinetuneMultiHeadNet():
         self.log_interval = log_interval
         self.patience = patience
         self.loss_fn_type = loss_fn_type
+        self.probs = probs
         # if self.loss_fn_type == 'bce':
         #     self.criterion = nn.BCEWithLogitsLoss()
         if self.loss_fn_type == 'mse':
@@ -461,14 +467,22 @@ class FinetuneMultiHeadNet():
             # calculate loss for all workers irrespective of active heads
             for j in range(self.num_workers):
                 if self.loss_fn_type == 'ce':
-                    loss = self.criterion(preds[:,:,j], labels[:,j])
+                    if not self.probs:
+                        loss = self.criterion(preds[:,:,j], labels[:,j])
+                    else:
+                        loss = self.criterion(preds[:,:,j], labels[:,:,j])
                 elif self.loss_fn_type == 'mse':
                     loss = self.criterion(preds[:,j], labels[:,j].float())
                 total_loss[j] += loss.item() * labels.size(0)
                 if self.loss_fn_type == 'ce':
-                    hits[j] += sum(labels[:,j].view(-1) == (preds[:,1,j] > 0).long().view(-1)).item()
+                    if self.probs:
+                        hits[j] += sum((labels[:,1,j]>0.5).long().view(-1) 
+                                    == (preds[:,1,j] > 0).long().view(-1)).item()
+                    else:
+                        hits[j] += sum(labels[:,j].view(-1) == (preds[:,1,j] > 0).long().view(-1)).item()
                 elif self.loss_fn_type == 'mse':
-                    hits[j] += sum(labels[:,j].view(-1) == (preds[:,j] > 0.5).long().view(-1)).item()
+                    hits[j] += sum((labels[:,j]>0.5).long().view(-1) 
+                                   == (preds[:,j] > 0.5).long().view(-1)).item()
                 total[j] += preds.size(0)
         elapsed_time = time.time() - start
         avg_losses = [total_loss[j] / total[j] for j in range(self.num_workers)]

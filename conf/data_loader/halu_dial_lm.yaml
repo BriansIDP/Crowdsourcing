@@ -1,4 +1,4 @@
-name: "HaluDialBinaryLM"
+name: "HaluDialLM"
 params:
   data_path: "data/halueval_dialogue.json"
   model_path: "gpt2"
@@ -8,3 +8,4 @@ params:
   task: "halueval"
   cross_val: False
   nfolds: 5
+  probs: False

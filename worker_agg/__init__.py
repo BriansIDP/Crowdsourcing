@@ -6,7 +6,7 @@ from .lm_policies import AvgSSLPredsSepLMs, PEWNoSSLSepLMs, PEWNoSSL
 from .data_loaders import HaluDialogueBinary, HaluQABinary, HaluDialogueLogit, HaluDialogueProb
 from .data_loaders import HaluDialEmbed, TruthfulQABinary
 from .data_loaders import SynLogisticData, SynTwoLayerMLPData
-from .data_loaders import HaluDialBinaryLM
+from .data_loaders import HaluDialLM
 from .utils import TwoLayerMLP, train_neural_net, train_neural_net_with_loaders
 from .utils import CustomDataset
 from .lm_utils import LMplusOneLayer, FinetuneLM, CombinedModel

@@ -27,18 +27,20 @@ def get_data(cfg, split_type='train', with_gt: bool=False,
     return data
 
 def eval_model(cfg, model, dataloader):
-    hits = 0
-    total = 0
-
     # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
     #     with record_function("model_inference"):
     labels = []
     probs = []
+    # ssl_preds = []
     for i, batch in enumerate(tqdm(dataloader)):
         inputs, ests, labels_ = batch
         labels.append(labels_.detach().squeeze().detach().cpu())
         if cfg.neural_net.name in ['MultiHeadNet']:
             probs_ = model((inputs, ests), predict_gt=True).squeeze().detach().cpu()
+            # probs_, ssl_preds_ = model((inputs, ests), predict_gt=True, testing=True)
+            # probs_ = probs_.squeeze().detach().cpu()
+            # ssl_preds_ = ssl_preds_.detach().cpu()
+            # ssl_preds.append(ssl_preds_)
         elif cfg.neural_net.name in ['CrowdLayerNN']:
             probs_ = model(inputs, predict_gt=True).squeeze().detach().cpu()
         elif cfg.neural_net.name in ['LMplusOneLayer']:
@@ -58,6 +60,10 @@ def eval_model(cfg, model, dataloader):
     preds = (probs > 0.5).int()
 
     # print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+    # if cfg.neural_net.name in ['MultiHeadNet']:
+    #     ssl_preds = torch.cat(ssl_preds, dim=0)
+    #     breakpoint()
+    #     return labels, preds, probs, ssl_preds
     return labels, preds, probs
 
 # def eval_policy(cfg, policy, dataloader):
@@ -121,6 +127,7 @@ def main(cfg):
         load_checkpoint(model, model_dir, epoch)
         model.eval()
         probs_com = []
+        ssl_preds_com = []
         for split_type in ['val', 'train']:
             data = get_data(cfg, split_type=split_type, with_gt=True)
             dataloader = DataLoader(
@@ -129,12 +136,19 @@ def main(cfg):
                         shuffle=False,
                         collate_fn=data.collate_fn,
                     )
+            # if cfg.neural_net.name in ['MultiHeadNet']:
+            #     labels, preds, probs, ssl_preds = eval_model(cfg, model, dataloader)
+            #     ssl_preds_com.append(ssl_preds)
+            # else:
             labels, preds, probs = eval_model(cfg, model, dataloader)
             probs_com.append(probs)
             acc = torch.mean((labels == preds).float()).item()
             print(f"{split_type} accuracy: {acc}")
         probs_com = torch.cat(probs_com, dim=0).cpu().detach().numpy()
-        np.save(f"{model_dir}/probs.npy", probs_com)
+        # np.save(f"{model_dir}/probs.npy", probs_com)
+        # if cfg.neural_net.name in ['MultiHeadNet']:
+        #     ssl_preds_com = torch.cat(ssl_preds_com, dim=0).cpu().detach().numpy()
+        #     np.save(f"{model_dir}/ssl_preds.npy", ssl_preds_com)
     else:
         model_dir = cfg.policy.params.model_dir
         epochs = cfg.eval.epochs

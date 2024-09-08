@@ -20,6 +20,7 @@ class GTAsFeature:
                  lr_scheduler_type: str='cosine',
                  log_interval: int=100,
                  batch_size: int=16,
+                 loss_fn_type: str='bce'
                  ) -> None:
         self.model = model
         # self.num_workers = num_workers
@@ -33,6 +34,7 @@ class GTAsFeature:
         self.log_interval = log_interval
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.loss_fn_type = loss_fn_type
 
     def collate_fn(self, batch):
         input_ids, ests, outcomes = zip(*batch)
@@ -67,7 +69,7 @@ class GTAsFeature:
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
-                               loss_fn_type='bce',)
+                               loss_fn_type=self.loss_fn_type)
         finetuner.run()
 
     def predict(self, inputs, outcomes):

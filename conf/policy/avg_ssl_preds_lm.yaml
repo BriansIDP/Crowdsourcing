@@ -9,3 +9,4 @@ params:
   lr_scheduler_type: 'cosine'
   log_interval: 100
   batch_size: 16
+  probs: False

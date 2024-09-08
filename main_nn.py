@@ -52,9 +52,9 @@ def get_policy(cfg, top_model_dir, fold: Union[int, None]=None):
         policy_dict['model_dir'] = top_model_dir
     else:
         policy_dict['model_dir'] = os.path.join(top_model_dir, f"fold_{fold}")
-    if os.path.exists(policy_dict['model_dir']):
-        raise ValueError(f"Directory {policy_dict['model_dir']} already exists")
-    os.makedirs(policy_dict['model_dir'])
+        if os.path.exists(policy_dict['model_dir']):
+            raise ValueError(f"Directory {policy_dict['model_dir']} already exists")
+        os.makedirs(policy_dict['model_dir'])
     if cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
         num_workers = len(cfg.data_loader.params.evidence_llm)
         model = model_constructor(**cfg.neural_net.params,
@@ -109,8 +109,9 @@ def eval_policy(cfg, policy, dataloader):
 
 @hydra.main(version_base=None, config_path="./conf", config_name="config")
 def main(cfg):
+    top_model_dir = get_model_dir(cfg)
     if not cfg.data_loader.params.cross_val:
-        policy, model_dir = get_policy(cfg)
+        policy, model_dir = get_policy(cfg, top_model_dir)
         # please dump the config file to the model_dir
         with open(os.path.join(model_dir, 'model_config.yaml'), 'w') as f:
             OmegaConf.save(cfg, f)
@@ -137,7 +138,6 @@ def main(cfg):
             print(f"{split_type} f1: {f1}")
             print(f"{split_type} roc_auc: {roc_auc}")
     else:
-        top_model_dir = get_model_dir(cfg)
         labels = []
         preds = []
         probs = []

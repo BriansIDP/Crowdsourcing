@@ -240,6 +240,7 @@ class AvgSSLPredsLM:
                  lr_scheduler_type: str='cosine',
                  log_interval: int=100,
                  batch_size: int=16,
+                 probs: bool=False
                  ) -> None:
         self.model = model
         self.num_workers = num_workers
@@ -253,6 +254,7 @@ class AvgSSLPredsLM:
         self.log_interval = log_interval
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.probs = probs
 
     def collate_fn(self, batch):
         input_ids, ests = zip(*batch)
@@ -260,7 +262,10 @@ class AvgSSLPredsLM:
         attn_mask = input_ids != 0
         inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
         ests = torch.stack(ests).to(self.device).long()
-        return (inputs, ests), ests
+        if not self.probs:
+            return (inputs, ests), ests
+        else:
+            return (inputs, ests), torch.cat((1.0-ests.unsqueeze(1), ests.unsqueeze(1)), dim=1)
 
     def fit(self, train_data, val_data):
         train_dataloader = DataLoader(
@@ -288,7 +293,8 @@ class AvgSSLPredsLM:
                                num_train_epochs=self.num_train_epochs,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
-                               loss_fn_type=self.model.loss_fn_type,)
+                               loss_fn_type=self.model.loss_fn_type,
+                               probs=self.probs)
         finetuner.run()
 
     def predict(self, inputs, ests: torch.Tensor,
