@@ -7,10 +7,11 @@ binary
 ----------------------------------------------------------------------------------------------------
 
 data_loader_params=(
-    "data_loader=halu_dial"
+    "data_loader=no_context_data"
     "data_loader.params.est_type='binary'"
     "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
 )
+
 
 neural_net_params=(
     "neural_net=two_layer_mlp"
@@ -26,8 +27,8 @@ policy_params=(
 
 policy_params=(
     "policy=avg_ssl_preds"
-    "policy.params.lr=1e-2"
-    "policy.params.weight_decay=1e-2"
+    "policy.params.lr=1e-3"
+    "policy.params.weight_decay=1e-3"
     "policy.params.loss_fn_type='bce'"
     "policy.params.logits=False"
     "policy.params.use_joblib_fit=True"
@@ -35,12 +36,12 @@ policy_params=(
 
 policy_params=(
     "policy=em_sym_bin"
-    "policy.params.seed=0"
+    "policy.params.seed=range(5)"
 )
 
 policy_params=(
     "policy=em_asym_bin"
-    "policy.params.seed=0"
+    "policy.params.seed=range(5)"
 )
 
 ----------------------------------------------------------------------------------------------------
@@ -48,10 +49,11 @@ probs
 ----------------------------------------------------------------------------------------------------
 
 data_loader_params=(
-    "data_loader=halu_dial"
+    "data_loader=no_context_data"
     "data_loader.params.est_type='prob'"
     "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
 )
+
 
 policy_params=(
     "policy=averaging"
@@ -61,8 +63,8 @@ policy_params=(
 
 policy_params=(
     "policy=avg_ssl_preds"
-    "policy.params.lr=1e-1"
-    "policy.params.weight_decay=1e-1"
+    "policy.params.lr=1e-2"
+    "policy.params.weight_decay=1e-3"
     "policy.params.loss_fn_type='bce'"
     "policy.params.logits=False"
     "policy.params.use_joblib_fit=True"
@@ -71,25 +73,57 @@ policy_params=(
 # Combine all parameters into one array
 all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_params[@]}")
 # Run the Python script with the combined parameters
-python main.py "${all_params[@]}"
+python main.py --multirun "${all_params[@]}"
 
 ####################################################################################################
-TruthfulQA: 10 <10B LLMs
+TruthfulQA: 10 7B LLMs
 ####################################################################################################
 
 data_loader_params=(
-    "data_loader=truthfulqa"
+    "data_loader=no_context_data"
     "data_loader.params.est_type='binary'"
-    "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+    "data_loader.params.model_list=['hermes70B','llama370B','mixtral','athene','qwen272B']"
+    "data_loader.params.task=truthfulqa"
+    "data_loader.params.datapath='data/truthfulQA'"
 )
 
-data_loader_params=(
-    "data_loader=truthfulqa"
-    "data_loader.params.est_type='prob'"
     "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+
+data_loader_params=(
+    "data_loader=no_context_data"
+    "data_loader.params.est_type='prob'"
+    "data_loader.params.model_list=['hermes70B','llama370B','mixtral','athene','qwen272B']"
+    "data_loader.params.task=truthfulqa"
+    "data_loader.params.datapath='data/truthfulQA'"
 )
+
+    "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
 
 # Combine all parameters into one array
 all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_params[@]}")
 # Run the Python script with the combined parameters
 python main.py "${all_params[@]}"
+
+####################################################################################################
+Arena: 10 7B LLMs
+####################################################################################################
+
+data_loader_params=(
+    "data_loader=no_context_data"
+    "data_loader.params.est_type='binary'"
+    "data_loader.params.model_list=['hermes70B','llama370B','mixtral','athene','qwen272B']"
+    "data_loader.params.task=arena"
+    "data_loader.params.datapath='data/Arena'"
+)
+
+    "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+
+data_loader_params=(
+    "data_loader=no_context_data"
+    "data_loader.params.est_type='prob'"
+    "data_loader.params.model_list=['hermes70B','llama370B','mixtral','athene','qwen272B']"
+    "data_loader.params.task=arena"
+    "data_loader.params.datapath='data/Arena'"
+)
+
+    "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
