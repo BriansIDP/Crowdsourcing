@@ -89,25 +89,22 @@ AvgSSLPredsContextVec
 
 data_loader_params=(
     "data_loader=halu_dial_embed"
-    "data_loader.params.filepath='data/gpt2_embeddings_truthfulqa.npz'"
+    "data_loader.params.filepath='data/gpt2_embeddings_truthfulqa_probs.npz'"
     "data_loader.params.model_list=['hermes70B','llama370B','mixtral','athene','qwen272B']"
-    "data_loader.params.logits=True"
-    "data_loader.params.task='truthfulqa'"
-    "data_loader.params.logits_path='data/truthfulQA'"
-)
-
-policy_params=(
-    "policy=avg_ssl_preds_context_vec"
-    "policy.params.lr=1e-2"
-    "policy.params.weight_decay=1e-2"
-    "policy.params.batch_size=200"
-    "policy.params.use_joblib_fit=True"
 )
 
 neural_net_params=(
     "neural_net=two_layer_mlp"
     "neural_net.params.hidden_size=100"
     "neural_net.params.seed=0"
+)
+
+policy_params=(
+    "policy=avg_ssl_preds_context_vec"
+    "policy.params.lr=1e-3"
+    "policy.params.weight_decay=1e-4"
+    "policy.params.batch_size=200"
+    "policy.params.use_joblib_fit=True"
 )
 
 # Combine all parameters into one array

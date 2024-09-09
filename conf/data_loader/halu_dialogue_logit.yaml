@@ -1,4 +1,0 @@
-name: "HaluDialogueLogit"
-params:
-  datapath: "data"
-  model_list: ["llama3","beluga","mistral","zephyr","starling"]
