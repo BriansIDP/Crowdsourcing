@@ -101,7 +101,7 @@ def main(cfg):
     all_outcomes = all_outcomes.flatten()
     print("shape of all_outcomes:", all_outcomes.shape)
     # npz file
-    np.savez('data/gpt2_embeddings_truthfulqa_probs.npz', 
+    np.savez('data/gpt2_embeddings_arena.npz', 
              embeddings=all_embeddings, ests=all_ests, outcomes=all_outcomes)
     # np.save('data/gpt2_embeddings.npy', all_embeddings)
 

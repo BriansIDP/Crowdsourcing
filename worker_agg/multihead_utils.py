@@ -330,7 +330,7 @@ class FinetuneMultiHeadNet():
         best_val_losses = [float('inf') for _ in range(self.num_workers)]
         best_epochs = [0 for _ in range(self.num_workers)]
         epochs_no_improve = [0 for _ in range(self.num_workers)]
-        self.eval_one_epoch()
+        # self.eval_one_epoch()
         for epoch in range(self.num_train_epochs):
             self.model.train()
             self.train_one_epoch(epoch,)

@@ -265,12 +265,14 @@ class HaluDialLM(Dataset):
         if self.probs:
             ests = [data[cllm][1] for cllm in self.evidence_llm]
         else:
-            ests = [data[cllm][0]<0.5 for cllm in self.evidence_llm]
+            ests = [data[cllm][0]<=0.5 for cllm in self.evidence_llm]
         outcomes = [0 if data['ref'] == 'yes' else 1]
         if self.task == 'halueval':
             input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
         elif self.task == 'truthfulqa':
             input_str = "Query: {}\nResponse: {}\nIs the answer truthful to the question?".format(data["query"], data["response"])
+        elif self.task == 'arena':
+            input_str = "Query: {}\n{}\nIs answer A better than answer B?".format(data["query"], data["response"])
         else:   
             raise ValueError(f"Invalid task {self.task}")
         prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]

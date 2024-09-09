@@ -5,8 +5,11 @@ params:
   weight_decay: 0.0
   gradient_accumulation_steps: 1
   num_warmup_steps: 0.03
-  num_train_epochs: 10
+  # num_train_epochs: 10
+  max_grad_steps: 5000
   lr_scheduler_type: 'cosine'
   log_interval: 100
+  eval_interval: 500
   batch_size: 16
   loss_fn_type: "bce"
+  patience: 2

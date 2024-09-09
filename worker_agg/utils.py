@@ -319,8 +319,10 @@ def train_neural_net_with_loaders(neural_net, train_loader, val_loader,
     optimizer.zero_grad()
     break_flag = False
     for epoch in range(epochs):
-        neural_net.train()
+        # neural_net.train() was here -- this is buggy
+        # if we do neural_net.train() here, the dropout mask will be different for each epoch
         for batch_idx, (x_train, y_train) in enumerate(train_loader):
+            neural_net.train()
             # Forward pass
             outputs = neural_net(x_train)
             loss = criterion(outputs, y_train)

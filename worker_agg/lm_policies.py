@@ -14,9 +14,11 @@ class LMGroundTruth:
                  weight_decay: float=1e-5, 
                  gradient_accumulation_steps: int=1, 
                  num_warmup_steps: float=0.03,
-                 num_train_epochs: int=10,
+                #  num_train_epochs: int=10,
+                 max_grad_steps: int=5000,
                  lr_scheduler_type: str='cosine',
                  log_interval: int=100,
+                 eval_interval: int=100,
                  batch_size: int=16,
                  patience: int=2,
                  loss_fn_type='bce',
@@ -29,9 +31,11 @@ class LMGroundTruth:
         self.weight_decay = weight_decay
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.num_warmup_steps = num_warmup_steps
-        self.num_train_epochs = num_train_epochs
+        # self.num_train_epochs = num_train_epochs
+        self.max_grad_steps = max_grad_steps
         self.lr_scheduler_type = lr_scheduler_type
         self.log_interval = log_interval
+        self.eval_interval = eval_interval
         self.batch_size = batch_size
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.patience = patience
@@ -72,9 +76,11 @@ class LMGroundTruth:
                                weight_decay=self.weight_decay,
                                gradient_accumulation_steps=self.gradient_accumulation_steps,
                                num_warmup_steps=self.num_warmup_steps,
-                               num_train_epochs=self.num_train_epochs,
+                            #    num_train_epochs=self.num_train_epochs,
+                               max_grad_steps=self.max_grad_steps,
                                lr_scheduler_type=self.lr_scheduler_type,
                                log_interval=self.log_interval,
+                               eval_interval=self.eval_interval,
                                patience=self.patience,
                                loss_fn_type=self.loss_fn_type)
         finetuner.run()

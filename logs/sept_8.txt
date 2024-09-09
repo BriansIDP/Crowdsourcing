@@ -1,0 +1,39 @@
+####################################################################################################
+HaluEvalDialLm
+####################################################################################################
+
+data_loader_params=(
+    "data_loader=halu_dial_lm"
+    "data_loader.params.data_path='data/halueval_dialogue.json'"
+    "data_loader.params.task=halueval"
+    "data_loader.params.evidence_llm=['llama3','beluga','mistral','zephyr','starling','openorca','dolphin','mistral1','hermes2','hermes25']"
+    "data_loader.params.cross_val=True"
+    "data_loader.params.nfolds=5"
+    "data_loader.params.probs=True"
+)
+
+    "data_loader.params.data_path='data/truthfulQA/truthful_qa.json'"
+
+policy_params=(
+    "policy=avg_ssl_preds_lm"
+    "policy.params.model_dir='exp/halueval/pew_lm'"
+    "policy.params.lr=1e-4"
+    "policy.params.weight_decay=1e-5"
+    "policy.params.batch_size=16"
+    "policy.params.log_interval=100"
+    "policy.params.probs=True"
+)
+
+    "policy.params.model_dir='exp/truthfulqa/pew_lm'"
+
+
+neural_net_params=(
+    "neural_net=multihead_net"
+    "neural_net.params.dropout_prob=0.1"
+    "neural_net.params.hidden_size_ow=128"
+)
+
+# Combine all parameters into one array
+all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_params[@]}")
+# Run the Python script with the combined parameters
+python main_nn.py "${all_params[@]}"
