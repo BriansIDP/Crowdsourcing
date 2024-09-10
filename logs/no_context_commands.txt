@@ -63,8 +63,8 @@ policy_params=(
 
 policy_params=(
     "policy=avg_ssl_preds"
-    "policy.params.lr=1e-2"
-    "policy.params.weight_decay=1e-3"
+    "policy.params.lr=1e-1"
+    "policy.params.weight_decay=1e-1"
     "policy.params.loss_fn_type='bce'"
     "policy.params.logits=False"
     "policy.params.use_joblib_fit=True"
@@ -126,7 +126,9 @@ data_loader_params=(
     "data_loader.params.datapath='data/Arena'"
 )
 
-    "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"####################################################################################################
+    "data_loader.params.model_list=[llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25]"
+    
+####################################################################################################
 HaluEvalDialLm
 ####################################################################################################
 

@@ -1,4 +1,4 @@
-name: "HaluDialLM"
+name: "FullContextData"
 params:
   data_path: "data/halueval_dialogue.json"
   model_path: "gpt2"
