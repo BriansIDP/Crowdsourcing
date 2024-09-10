@@ -18,6 +18,19 @@ from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
 from peft import PeftConfig, PeftModel
 
 
+class GradReverse(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x):
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return grad_output.neg()
+
+def grad_reverse(x):
+    return GradReverse.apply(x)
+
+
 class WorkerCompressor(torch.nn.Module):
     def __init__(
         self,
@@ -29,26 +42,59 @@ class WorkerCompressor(torch.nn.Module):
         self.nllms = nllms
         self.comp_llms = target_llms
         self.encoder = torch.nn.Linear(nllms, target_llms, bias=False)
-        self.decoder = torch.nn.Linear(target_llms, nllms, bias=False)
+        # self.decoder = torch.nn.Linear(target_llms, nllms, bias=False)
+        self.decoder = torch.nn.Sequential(
+            torch.nn.Linear(target_llms, 128),
+            torch.nn.ReLU(),
+            torch.nn.Linear(128, nllms),
+        )
         self.encoder.weight.data = 1/ nllms * torch.ones(target_llms, nllms)
         self.kl_factor = kl_factor
+        if self.kl_factor > 0:
+            self.discriminator = NDM(target_llms)
         self.epoch = 0
 
     def forward(self, workers, evalmode=False):
         normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
-        import pdb; pdb.set_trace()
         compressed = torch.einsum('bi,ji->bj', workers, normalised_weights)
-        # compressed = torch.sigmoid(self.encoder(workers))
-        # compressed = self.encoder(workers)
-        # recovered = torch.sigmoid(self.decoder(compressed))
-        recovered = self.decoder(compressed)
-        loss = ((recovered - workers) ** 2).mean()
-        # if evalmode:
-        #     loss = (recovered - workers).abs().mean()
-        # else:
-        #     loss = - workers * torch.log(recovered) - (1 - workers) * torch.log(1 - recovered)
-        #     loss = loss.mean()
+        recovered = torch.sigmoid(self.decoder(compressed))
+        if evalmode:
+            loss = (recovered - workers).abs().mean()
+        else:
+            loss = - workers * torch.log(recovered) - (1 - workers) * torch.log(1 - recovered)
+            loss = loss.mean()
+            if self.kl_factor > 0:
+                kl_loss = self.compute_KL(compressed)
+                loss = loss + self.kl_factor * kl_loss
         return loss, compressed
+
+    def compute_KL(self, compressed):
+        prior = torch.rand(compressed.size(0), self.nllms).to(compressed.device)
+        normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
+        prior_compressed = torch.einsum('bi,ji->bj', prior, normalised_weights)
+        prior_compressed = grad_reverse(prior_compressed)
+        inputs = torch.cat([prior_compressed, compressed], dim=0)
+        labels = torch.cat([torch.ones(compressed.size(0)), torch.zeros(compressed.size(0))], dim=0).long().to(compressed.device)
+        loss = self.discriminator(inputs, labels)
+        return loss
+
+
+class NDM(torch.nn.Module):
+    def __init__(
+        self,
+        nfeatures,
+    ):
+        super(NDM, self).__init__()
+        self.discriminator = torch.nn.Sequential(
+            torch.nn.Linear(nfeatures, 128),
+            torch.nn.ReLU(),
+            torch.nn.Linear(128, nfeatures),
+        )
+    
+    def forward(self, inputs, labels):
+        outputs = self.discriminator(inputs)
+        loss = torch.nn.functional.cross_entropy(outputs, labels)
+        return loss.mean()
 
 
 class WorkerPredictor(torch.nn.Module):
@@ -112,11 +158,12 @@ class WorkerPredictor(torch.nn.Module):
             self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.nllms, 1), 0.3 * torch.ones(self.nllms, 1)), dim=-1)
             self.skilllayer = torch.nn.Linear(self.llm.config.hidden_size, 2 * self.nllms)
         elif self.mode == "pewcrowdaepost":
+            self.target_llms = self.nllms - 1
             self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size, 2)
-            self.outlayer = torch.nn.Linear(2, self.nllms, bias=False)
-            self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.nllms, 1), 0.3 * torch.ones(self.nllms, 1)), dim=-1)
-            self.correlationlayer = torch.nn.Linear(self.nllms-1, self.nllms, bias=False)
-            self.correlationlayer.weight.data = torch.eye(self.nllms, self.nllms)
+            self.outlayer = torch.nn.Linear(2, self.target_llms, bias=False)
+            self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.target_llms, 1), 0.3 * torch.ones(self.target_llms, 1)), dim=-1)
+            self.correlationlayer = torch.nn.Linear(self.target_llms, self.nllms, bias=False)
+            self.correlationlayer.weight.data = 1/(self.target_llms) * torch.ones(nllms, self.target_llms)
         elif self.mode == "gt":
             self.output_layer = torch.nn.Linear(self.llm.config.hidden_size, 2)
         else:
@@ -225,10 +272,11 @@ class WorkerPredictor(torch.nn.Module):
                 labels = (workers < 0.5).long()
             latent_dist = self.bottleneck(self.drop(pred_hidden))
             latent_dist = torch.softmax(latent_dist, dim=-1)
-            pred_hidden = self.outlayer(latent_dist)
-            # normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
-            # pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
-            # pred_hidden = torch.sigmoid(self.correlationlayer(pred_hidden))
+            # pred_hidden = self.outlayer(latent_dist)
+            normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
+            pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
+            normalised_weight_corr = torch.softmax(self.correlationlayer.weight, -1).unsqueeze(0)
+            pred_hidden = (pred_hidden.unsqueeze(1) * normalised_weight_corr).sum(dim=-1)
             if self.regression == "skill":
                 # loss = ((pred_hidden.view(-1) - labels.view(-1)) ** 2).mean()
                 loss = - workers * torch.log(pred_hidden) - (1 - workers) * torch.log(1 - pred_hidden)
@@ -398,14 +446,14 @@ class WorkerPredictor(torch.nn.Module):
                 prediction = (numerator < denominator).float().unsqueeze(-1)
                 prediction = torch.cat([1-prediction, prediction], dim=-1)
         elif self.mode == "pewcrowdaepost":
-            if self.mode == "pewcrowdaepost":
-                pred_hidden = torch.cat([pred_hidden, labels], dim=-1)
             prediction = self.bottleneck(pred_hidden)
             prediction = torch.softmax(prediction, dim=-1)
-            pred_hidden = self.outlayer(prediction).view(prediction.size(0)*self.nllms, 1)
-            # normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
-            # pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
-            # pred_hidden = torch.sigmoid(self.correlationlayer(pred_hidden)).view(prediction.size(0)*self.nllms, 1)
+            # pred_hidden = self.outlayer(prediction).view(prediction.size(0)*self.nllms, 1)
+            normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
+            pred_hidden = (prediction.unsqueeze(1) * normalised_weight).sum(dim=-1)
+            normalised_weight_corr = torch.softmax(self.correlationlayer.weight, -1).unsqueeze(0)
+            pred_hidden = (pred_hidden.unsqueeze(1) * normalised_weight_corr).sum(dim=-1)
+            pred_hidden = pred_hidden.view(prediction.size(0)*self.nllms, 1)
             pred_hidden = torch.cat([1-pred_hidden, pred_hidden], dim=-1)
 
         elif self.mode == "gt":

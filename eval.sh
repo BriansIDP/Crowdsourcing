@@ -1,24 +1,26 @@
 . /scratch/OpenSource/espnet/tools/anaconda/etc/profile.d/conda.sh && conda deactivate && conda activate hallucination
 
 regression=skill
-# mode=pewcrowdimp
-mode=gt
+# regression=hardlabel
+mode=pewcrowdae
+# mode=gt
 # mode=compression
-# task=halueval
-task=arenabinary
+task=halueval
+# task=arenabinary
+# task=truthfulqa
 
-# trainfile="data/halueval_dialogue.json"
+trainfile="data/halueval_dialogue.json"
 # trainfile=data/truthfulQA/truthful_qa.json
-trainfile=data/Arena/arena_hard_binary_short.json
+# trainfile=data/Arena/arena_hard_binary_short.json
 expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_${mode}_${regression}_${task}
-# expdir=exp/pewcrowd_llama3_mse_direct_crowdlayer_pewcrowdimp_skill_truthfulqa
-# expdir=exp/worker_compression_encoder_decoder_CE_5beluga
+# expdir=exp/pewcrowd_llama3_mse_direct_crowdlayer_${mode}_${regression}_${task}
+# expdir=exp/worker_compression_encoder_decoder_CE_adv
 
 # python neuralEM.py \
 python predict.py \
     --model_path $expdir \
-    --model_ckpt checkpoint.5 \
+    --model_ckpt checkpoint.7 \
     --bsize 8 \
     --testfile $trainfile \
-    --aggregation hardEM \
+    --aggregation mean \
     # --sigma_path exp/pewcrowd_gpt2_mse_direct_crowdlayer_constrained_largebatch/sigma.npy \

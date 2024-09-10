@@ -50,7 +50,8 @@ class WorkerDataset(Dataset):
                 self.data = self.data[:start] + self.data[end:]
         elif split == 0.9:
             start = int(len(self.data) * split)
-            end = int(len(self.data) * (split + 0.05))
+            # end = int(len(self.data) * (split + 0.05))
+            end = start + 250
             if self.evalmode:
                 self.data = self.data[start:end]
 

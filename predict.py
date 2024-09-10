@@ -16,7 +16,7 @@ from transformers import AutoModelForCausalLM
 from transformers import AutoModelForSeq2SeqLM
 from transformers import SchedulerType, AdamW, get_scheduler
 
-from model import WorkerPredictor, WorkerCompressor
+from model import WorkerPredictor, WorkerCompressor, NDM
 from dataloader import WorkerDataset, collate_fn
 from torch.utils.data import DataLoader
 
@@ -27,6 +27,45 @@ def logging(s, logfile, logging_=True, log_=True):
     if log_:
         with open(logfile, 'a+') as f_log:
             f_log.write(s + '\n')
+
+
+def train_desc(args, predictions):
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    # Hyper-parameters
+    lr = 0.2
+    epochs = 100
+    batch_size = 32
+    predictions = torch.tensor(predictions).to(device)
+    ndm_model = NDM(predictions.size(-1)).to(device)
+    optimizer = torch.optim.SGD(ndm_model.parameters(), lr=lr)
+    nbatches = predictions.size(0) // batch_size
+    predictions = predictions[:batch_size*nbatches].view(nbatches, batch_size, -1)
+    orders = [i for i in range(nbatches)]
+    bestloss = 1e9
+    for epoch in range(epochs):
+        random.shuffle(orders)
+        total_loss = 0
+        total_count = 0
+        for i in orders:
+            optimizer.zero_grad()
+            sample = predictions[i]
+            shuffled_indices = torch.argsort(torch.rand_like(sample), dim=0)
+            shuffled_sample = torch.gather(sample, dim=0, index=shuffled_indices)
+            labels = torch.cat([torch.ones(sample.size(0)), torch.zeros(sample.size(0))], dim=0).long().to(device)
+            loss = ndm_model(torch.cat((sample, shuffled_sample), dim=0), labels)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            total_count += 1
+        avg_loss = total_loss / total_count
+        print("Epoch {}\tAverage NDM Loss: {:.5f}".format(epoch, avg_loss))
+        if avg_loss < bestloss:
+            bestloss = avg_loss
+        else:
+            lr = lr // 2
+            for g in optimizer.param_groups:
+                g['lr'] = lr
+    return ndm_model
 
 
 def main(args):
@@ -117,22 +156,29 @@ def main(args):
                         labels=(workers < 0.5).float() if "hard" in args.aggregation else 1-workers,
                         withEM=True if "EM" in args.aggregation else False,
                     )
-                if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "pewcrowdae"]:
+                if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "pewcrowdae", "pewcrowdaepost"]:
                     predictions.extend(prediction[:, 0].tolist())
                     prediction = prediction[:, 0] < 0.5
                     total_hits += (prediction == labels[:, 0]).sum()
                 elif train_args["mode"] == "compression":
-                    predictions.extend((prediction < 0.5).tolist())
+                    # predictions.extend((prediction < 0.5).tolist())
+                    predictions.extend(prediction.tolist())
                 else:
                     total_hits += (prediction == labels[:, 0]).sum()
                 total_samples += prediction.size(0)
                 all_labels.extend(labels[:, 0].tolist())
+
+    if train_args["mode"] == "compression" and args.aggregation == "ndm":
+        print("Training NDM for measuring independence")
+        ndm_model = train_desc(args, predictions)
+
     # all_sigmas = np.array(all_sigmas)
     if task in ["halueval", "truthfulqa", "arenabinary"]:
         predictions = np.array(predictions)
         all_labels = np.array(all_labels)
         if train_args["mode"] == "compression":
             total_samples = predictions.shape[0]
+            predictions = predictions < 0.5
             for k in range(predictions.shape[1]):
                 hits = (predictions[:, k] == all_labels).sum(axis=0)
                 print("Accuracy worker {}: {:.5f}".format(k, hits/total_samples))

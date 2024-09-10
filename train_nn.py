@@ -73,7 +73,7 @@ def main(args):
 
     ## Initialise model
     if args.mode == "compression":
-        model = WorkerCompressor(len(llm_list), args.target_nllms)
+        model = WorkerCompressor(len(llm_list), args.target_nllms, kl_factor=args.advlossfactor)
         model.to(device)
     else:
         lora_config = {}
@@ -131,31 +131,34 @@ def main(args):
     )
 
     # Train loop
-    with torch.cuda.amp.autocast():
-        for epoch in range(args.num_train_epochs):
-            model.train()
-            print("Starting epoch {}".format(epoch))
-            model.epoch = epoch
-            if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
-                model.freeze_model()
-            model = train_one_epoch(
-                args,
-                epoch,
-                model,
-                train_dataloader,
-                optimizer,
-                lr_scheduler,
-                tokenizer,
-                ae_model=ae_model,
-            )
-            if args.split < 1.0:
-                model.eval()
-                eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
+    # with torch.cuda.amp.autocast():
+    for epoch in range(args.num_train_epochs):
+        model.train()
+        print("Starting epoch {}".format(epoch))
+        model.epoch = epoch
+        if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
+            model.freeze_model()
+        model = train_one_epoch(
+            args,
+            epoch,
+            model,
+            train_dataloader,
+            optimizer,
+            lr_scheduler,
+            tokenizer,
+            ae_model=ae_model,
+        )
+        if args.split < 1.0:
+            model.eval()
+            eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
 
-            current_lr = optimizer.param_groups[0]["lr"]
-            if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
-                model.unfreeze_model()
+        current_lr = optimizer.param_groups[0]["lr"]
+        if epoch >= args.freeze_epoch and "pewcrowd" in args.mode:
+            model.unfreeze_model()
+        if args.mode != "compression":
             save_checkpoint(model, tokenizer, args.outputdir, epoch)
+    if args.mode == "compression":
+        save_checkpoint(model, tokenizer, args.outputdir, epoch)
 
 
 def train_one_epoch(
@@ -347,7 +350,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--outputdir",
         type=str,
-        default='./exp/clip_vlm',
+        default='./exp',
         help="Path to the output dir",
     )
     parser.add_argument(
@@ -409,6 +412,12 @@ if __name__ == "__main__":
         type=float,
         default=0.,
         help="regularisation factor",
+    )
+    parser.add_argument(
+        "--advlossfactor",
+        type=float,
+        default=0.,
+        help="Adversarial loss factor",
     )
     parser.add_argument(
         "--target_nllms",
