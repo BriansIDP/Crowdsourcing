@@ -199,7 +199,7 @@ class FullContextData(Dataset):
         #     else:
         #         self.data = self.data[:portion] if portion > 0 else self.data[portion:]
         #         # self.data = self.data[:portion] 
-        if not self.cross_val:
+        if fold is None and not self.cross_val:
             if split < 0.9:
                 start = int(len(self.data) * split)
                 end = int(len(self.data) * (split + 0.1))
