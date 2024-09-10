@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 from transformers import AutoTokenizer
+from sklearn.preprocessing import StandardScaler
 
 from .utils import TwoLayerMLP
 
@@ -76,7 +77,7 @@ class HaluQABinary:
             ests[:, i] = est_dict[model]
         return ests, outcomes
 
-class HaluDialEmbed:
+class EmbedData:
     def __init__(self, filepath: str, model_list: list, seed: int,): 
         assert Path(filepath).exists()
         self.all_data = np.load(filepath)
@@ -86,6 +87,7 @@ class HaluDialEmbed:
     def get_data(self, split=0.5, split_type='train',
                  shuffle=False):
         contexts = self.all_data['embeddings']
+        contexts = StandardScaler().fit_transform(contexts)
         ests = self.all_data['ests']
         outcomes = self.all_data['outcomes']
         total_samples = contexts.shape[0]
@@ -160,7 +162,7 @@ class SynLogisticData:
         return ests, features, outcomes
 
 
-class HaluDialLM(Dataset):
+class FullContextData(Dataset):
     """Dataset for supervised fine-tuning."""
 
     def __init__(

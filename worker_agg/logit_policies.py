@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader
 from .utils import find_kl_gaussians
 from .utils import gaussian_log_likelihood
 from .utils import TwoLayerMLP, train_neural_net
-from .utils import CustomDataset, train_neural_net_with_loaders
+from .utils import CustomDataset, TrainWithLoaders
 
 class EMGaussian:
 
@@ -386,7 +386,7 @@ class AvgSSLPredsContextVec:
                  loss_fn_type: str="bce",
                  lr: float=1e-3, 
                  weight_decay: float=1e-5,
-                 patience: int=20,
+                 patience: int=2,
                  max_grad_steps: int=1000,
                  use_joblib_fit: bool=False,
                  use_joblib_multirun: bool=True,
@@ -443,7 +443,7 @@ class AvgSSLPredsContextVec:
                 shuffle=False,
                 collate_fn=self.create_collate_fn(i),
             )
-            result = train_neural_net_with_loaders(
+            result = TrainWithLoaders(
                         neural_net=self.neural_net_cons(),
                         train_loader=train_dataloader, 
                         val_loader=val_dataloader,
@@ -455,7 +455,7 @@ class AvgSSLPredsContextVec:
                         lr_scheduler_type=self.lr_scheduler_type,
                         eval_interval=self.eval_interval,
                         use_joblib_fit=self.use_joblib_fit,
-                        use_joblib_multirun=self.use_joblib_multirun,)
+                        use_joblib_multirun=self.use_joblib_multirun,).run()
             return result
 
         # rng = torch.Generator().manual_seed(self.seed)

@@ -1,3 +1,5 @@
+import itertools
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -279,123 +281,137 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx]
 
-# Prepare the Training Function
-def train_neural_net_with_loaders(neural_net, train_loader, val_loader,
-                     lr: float=0.001, weight_decay: float=1e-5, patience: int=100,
-                     max_grad_steps: int=1000, testing: bool=False, loss_fn_type: str='bce',
-                     lr_scheduler_type: str='constant', eval_interval: int=50,
-                     use_joblib_fit: bool=False, use_joblib_multirun: bool=True):
-    if use_joblib_fit or use_joblib_multirun:
-        # Ensure PyTorch uses only one thread per process
-        torch.set_num_threads(1)
-    if loss_fn_type == 'bce':
-        criterion = nn.BCEWithLogitsLoss()
-    elif loss_fn_type == 'mse':
-        criterion = nn.MSELoss()
-    else:
-        raise ValueError("Invalid loss function type")
-    optimizer = optim.AdamW(neural_net.parameters(), lr=lr, weight_decay=weight_decay)
-
-    # Scheduler and math around the number of training steps.
-    # num_update_steps_per_epoch = len(train_loader)
-    # max_train_steps = epochs * num_update_steps_per_epoch
-
-    # lr_scheduler = get_scheduler(
-    #     name=lr_scheduler_type,
-    #     optimizer=optimizer,
-    #     num_warmup_steps=num_warmup_steps,
-    #     num_training_steps=max_train_steps,
-    # )
-    assert lr_scheduler_type in ['constant', 'cosine']
-    if lr_scheduler_type == 'cosine':
-        lr_scheduler = CosineAnnealingLR(optimizer, T_max=max_grad_steps, eta_min=0)
-    epochs = max_grad_steps // len(train_loader)
-
-    # Training loop
-    best_loss=np.inf
-    val_losses = []
-    val_accs = []
-    gradient_steps = 0
-    optimizer.zero_grad()
-    break_flag = False
-    for epoch in range(epochs):
-        # neural_net.train() was here -- this is buggy
-        # if we do neural_net.train() here, the dropout mask will be different for each epoch
-        for batch_idx, (x_train, y_train) in enumerate(train_loader):
-            neural_net.train()
+class TrainWithLoaders:
+    def __init__(self, neural_net, train_loader, val_loader, 
+                 lr=0.001, weight_decay=1e-5, patience=20,
+                 max_grad_steps=1000, testing=False, loss_fn_type='bce', 
+                 lr_scheduler_type='constant', eval_interval=50, 
+                 use_joblib_fit=False, use_joblib_multirun=True):
+        self.neural_net = neural_net
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.lr = lr
+        self.weight_decay = weight_decay
+        self.patience = patience
+        self.max_grad_steps = max_grad_steps
+        self.testing = testing
+        self.loss_fn_type = loss_fn_type
+        self.lr_scheduler_type = lr_scheduler_type
+        self.eval_interval = eval_interval
+        self.use_joblib_fit = use_joblib_fit
+        self.use_joblib_multirun = use_joblib_multirun
+        if use_joblib_fit or use_joblib_multirun:
+            # Ensure PyTorch uses only one thread per process
+            torch.set_num_threads(1)
+    
+    def init_opti_scheduler(self):
+        if self.loss_fn_type == 'bce':
+            self.criterion = nn.BCEWithLogitsLoss()
+        elif self.loss_fn_type == 'mse':
+            self.criterion = nn.MSELoss()
+        else:
+            raise ValueError("Invalid loss function type")
+        self.optimizer = optim.AdamW(self.neural_net.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        assert self.lr_scheduler_type in ['constant', 'cosine']
+        if self.lr_scheduler_type == 'cosine':
+            self.lr_scheduler = CosineAnnealingLR(self.optimizer, T_max=self.max_grad_steps, eta_min=0)
+    
+    def run(self):
+        inf_loader = itertools.cycle(self.train_loader)
+        best_loss=np.inf
+        val_losses = []
+        val_accs = []
+        self.optimizer.zero_grad()
+        break_flag = False
+        epoch_no_improve = 0
+        for grad_step in range(self.max_grad_steps):
+            x_train, y_train = next(inf_loader)
+            self.neural_net.train()
             # Forward pass
-            outputs = neural_net(x_train)
-            loss = criterion(outputs, y_train)
+            outputs = self.neural_net(x_train)
+            loss = self.criterion(outputs, y_train)
 
             # Backward pass and optimization
             loss.backward()
-            optimizer.step()
-            current_lr = optimizer.param_groups[0]['lr']
-            if lr_scheduler_type == 'cosine':
-                lr_scheduler.step()
-            optimizer.zero_grad()
-            gradient_steps += 1
+            self.optimizer.step()
+            current_lr = self.optimizer.param_groups[0]['lr']
+            if self.lr_scheduler_type == 'cosine':
+                self.lr_scheduler.step()
+            self.optimizer.zero_grad()
 
-            # if (batch_idx+1) % print_every == 0:
-            #     print(f"Epoch {epoch} (0-idxed), Batch {batch_idx} (0-idxed), Loss: {loss.item()}, LR: {current_lr:.6f}")
-
-            if (gradient_steps % eval_interval == 0) or (gradient_steps == max_grad_steps):
+            if (grad_step % self.eval_interval == 0) or (grad_step == self.max_grad_steps):
                 # Validation
-                neural_net.eval()
-                with torch.no_grad():
-                    loss_val = 0
-                    total_samples = 0
-                    hits = 0
-                    for batch_idx, (x_val, y_val) in enumerate(val_loader):
-                        test_outputs = neural_net(x_val)
-                        loss_val += criterion(test_outputs, y_val).item()*len(y_val)
-                        total_samples += len(y_val)
-                        if loss_fn_type == 'bce':
-                            hits += ((test_outputs > 0).float() == y_val).float().sum().item()
-                    val_acc = hits/total_samples
-                    loss_val /= total_samples
-                    val_accs.append(val_acc)
-                    val_losses.append(loss_val)
-                    # print(f"Epoch {epoch} (0-idxed), Validation Loss: {loss_val}, Validation Accuracy: {val_acc}")
+                val_acc, loss_val = self.eval()
+                val_accs.append(val_acc)
+                val_losses.append(loss_val)
+                # print(f"Epoch {epoch} (0-idxed), Validation Loss: {loss_val}, Validation Accuracy: {val_acc}")
 
                 # Early stopping
-                if loss_val < best_loss:
-                    best_loss = loss_val
-                    if loss_fn_type == 'bce':
-                        best_acc = val_acc
-                    best_neural_net_wts = copy.deepcopy(neural_net.state_dict())
-                    grad_steps_no_improve = 0
-                else:
-                    grad_steps_no_improve += 1*eval_interval
-
-                if grad_steps_no_improve >= patience:
-                    # print(f'Early stopping at epoch {epoch + 1}')
-                    # print(f'Early stopping at gradient step {gradient_steps}')
-                    break_flag = True
-                    neural_net.load_state_dict(best_neural_net_wts)  # Load the best neural_net weights
+                out = self.early_stopping(loss_val=loss_val, val_acc=val_acc, 
+                                          best_loss=best_loss, 
+                                          epoch_no_improve=epoch_no_improve, 
+                                          grad_step=grad_step)
+                best_loss, best_neural_net_wts, epoch_no_improve, break_flag, best_acc = out
+                if break_flag:
                     break
-        if break_flag:
-            break
-    if not break_flag:
-        neural_net.load_state_dict(best_neural_net_wts)  # Load the best neural_net weights
-    else:
-        pass # best weights are already loaded
+        if not break_flag:
+            self.neural_net.load_state_dict(best_neural_net_wts)  # Load the best neural_net weights
+        else:
+            pass # best weights are already loaded
 
-    neural_net.eval() # Set the model to evaluation mode
-    grad_step_min_id = np.argmin(val_losses)
-    best_val_loss = val_losses[grad_step_min_id]
-    assert np.isclose(best_loss, best_val_loss)
-    if loss_fn_type == 'bce':
-        best_val_acc = val_accs[grad_step_min_id]
-        assert np.isclose(best_acc, best_val_acc)
-    stats_dict = {
-        "best_val_loss": best_val_loss,
-        "grad_step_min": int(grad_step_min_id*eval_interval),
-    }
-    if loss_fn_type == 'bce':
-        stats_dict["best_val_acc"] = val_accs[grad_step_min_id]
-    if testing:
-        stats_dict["val_losses"] = val_losses
-        if loss_fn_type == 'bce':
-            stats_dict["val_accs"] = val_accs
-    return neural_net, stats_dict
+        self.neural_net.eval() # Set the model to evaluation mode
+        grad_step_min_id = np.argmin(val_losses)
+        best_val_loss = val_losses[grad_step_min_id]
+        assert np.isclose(best_loss, best_val_loss)
+        if self.loss_fn_type == 'bce':
+            best_val_acc = val_accs[grad_step_min_id]
+            assert np.isclose(best_acc, best_val_acc)
+        stats_dict = {
+            "best_val_loss": best_val_loss,
+            "grad_step_min": int(grad_step_min_id*self.eval_interval),
+        }
+        if self.loss_fn_type == 'bce':
+            stats_dict["best_val_acc"] = val_accs[grad_step_min_id]
+        if self.testing:
+            stats_dict["val_losses"] = val_losses
+            if self.loss_fn_type == 'bce':
+                stats_dict["val_accs"] = val_accs
+        return self.neural_net, stats_dict
+
+    def eval(self):
+        self.neural_net.eval()
+        with torch.no_grad():
+            loss_val = 0
+            total_samples = 0
+            hits = 0
+            for x_val, y_val in self.val_loader:
+                test_outputs = self.neural_net(x_val)
+                loss_val += self.criterion(test_outputs, y_val).item()*len(y_val)
+                total_samples += len(y_val)
+                if self.loss_fn_type == 'bce':
+                    hits += ((test_outputs > 0).float() == y_val).float().sum().item()
+            val_acc = hits/total_samples
+            loss_val /= total_samples
+            return loss_val, val_acc
+    
+    def early_stopping(self, loss_val, val_acc, best_loss, 
+                       epoch_no_improve, grad_step):
+        if loss_val < best_loss:
+            best_loss = loss_val
+            if self.loss_fn_type == 'bce':
+                best_acc = val_acc
+            best_neural_net_wts = copy.deepcopy(self.neural_net.state_dict())
+            epoch_no_improve = 0
+        else:
+            epoch_no_improve += 1
+
+        if epoch_no_improve >= self.patience:
+            epoch = grad_step // self.eval_interval
+            print(f'Early stopping at epoch {epoch + 1}')
+            # print(f'Early stopping at gradient step {gradient_steps}')
+            self.neural_net.load_state_dict(best_neural_net_wts)  # Load the best neural_net weights
+            break_flag = True
+        else:
+            break_flag = False
+        
+        return best_loss, best_neural_net_wts, epoch_no_improve, break_flag, best_acc

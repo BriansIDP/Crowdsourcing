@@ -6,7 +6,7 @@ params:
   max_grad_steps: 1000
   use_joblib_fit: False
   eval_interval: 50
-  patience: 200 # if no improvement in patience/eval_interval evals, stop training
+  patience: 2 # if no improvement in 'patience' eval intervals, stop training
   seed: 42
   lr_scheduler_type: 'constant'
   folds: 5
