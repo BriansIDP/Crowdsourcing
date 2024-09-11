@@ -1,0 +1,28 @@
+####################################################################################################
+AvgSSLPredsContextVec
+####################################################################################################
+
+data_loader_params=(
+    "data_loader=embed_data"
+    "data_loader.params.filepath='data/gpt2_embeddings_arena.npz'"
+    "data_loader.params.model_list=['hermes70B','llama370B','mixtral','athene','qwen272B']"
+)
+
+neural_net_params=(
+    "neural_net=two_layer_mlp"
+    "neural_net.params.hidden_size=100"
+    "neural_net.params.seed=0"
+)
+
+policy_params=(
+    "policy=avg_ssl_preds_context_vec"
+    "policy.params.lr=1e-2"
+    "policy.params.weight_decay=1e-3"
+    "policy.params.batch_size=200"
+    "policy.params.use_joblib_fit=True"
+)
+
+# Combine all parameters into one array
+all_params=("${data_loader_params[@]}" "${policy_params[@]}" "${neural_net_params[@]}")
+# Run the Python script with the combined parameters
+python main.py "${all_params[@]}"

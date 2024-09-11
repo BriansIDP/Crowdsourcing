@@ -4,6 +4,7 @@ import time
 from collections import OrderedDict
 from typing import Dict
 import copy
+import itertools
 
 import numpy as np
 from tqdm import tqdm
@@ -245,9 +246,9 @@ class FinetuneMultiHeadNet():
                 model_dir: str, num_workers: int,
                 lr: float=0.001, weight_decay: float=1e-5, 
                 gradient_accumulation_steps: int=1, num_warmup_steps: float=0.03,
-                num_train_epochs: int=10, lr_scheduler_type: str='cosine',
+                max_grad_steps: int=5000, lr_scheduler_type: str='cosine',
                 log_interval: int=100, patience: int=2, loss_fn_type='ce',
-                probs: bool=False
+                probs: bool=False, eval_interval: int=500
                 ) -> None:
         self.model = model
         self.train_dataloader = train_dataloader
@@ -258,14 +259,16 @@ class FinetuneMultiHeadNet():
         self.model.set_requires_grad_for_heads(self.active_heads)
         self.lr = lr
         self.weight_decay = weight_decay
+        # assert gradient_accumulation_steps==1, "Only gradient_accumulation_steps=1 is supported"
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.num_warmup_steps = num_warmup_steps
-        self.num_train_epochs = num_train_epochs
+        self.max_grad_steps = max_grad_steps
         self.lr_scheduler_type = lr_scheduler_type
         self.log_interval = log_interval
         self.patience = patience
         self.loss_fn_type = loss_fn_type
         self.probs = probs
+        self.eval_interval = eval_interval
         # if self.loss_fn_type == 'bce':
         #     self.criterion = nn.BCEWithLogitsLoss()
         if self.loss_fn_type == 'mse':
@@ -287,18 +290,6 @@ class FinetuneMultiHeadNet():
     def init_opts_schedulers(self):
         ## Optimiser
         no_decay = ["bias", "LayerNorm.weight"]
-        # optimizer_grouped_parameters =[]
-        # for head in self.model.heads:
-        #     optimizer_grouped_parameters += [
-        #         {
-        #             "params": [p for n, p in head.named_parameters() if not any(nd in n for nd in no_decay)],
-        #             "weight_decay": self.weight_decay,
-        #         },
-        #         {
-        #             "params": [p for n, p in head.named_parameters() if any(nd in n for nd in no_decay)],
-        #             "weight_decay": 0.0,
-        #         },
-        #     ]
         optimizer_grouped_parameters = [
             {
                 "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
@@ -310,19 +301,18 @@ class FinetuneMultiHeadNet():
             },
         ]
         self.optimizer = optim.AdamW(optimizer_grouped_parameters, lr=self.lr)
-        # self.optimizer = optim.AdamW(self.model.parameters(), lr=self.lr)
 
         # Scheduler and math around the number of training steps.
-        num_update_steps_per_epoch = math.ceil(len(self.train_dataloader) / self.gradient_accumulation_steps)
-        max_train_steps = self.num_train_epochs * num_update_steps_per_epoch
-        num_warmup_steps = self.num_warmup_steps * max_train_steps
+        # num_update_steps_per_epoch = math.ceil(len(self.train_dataloader) / self.gradient_accumulation_steps)
+        # max_train_steps = self.num_train_epochs * num_update_steps_per_epoch
+        num_warmup_steps = self.num_warmup_steps * self.max_grad_steps
         self.lr_scheduler = get_scheduler(
                 name=self.lr_scheduler_type,
                 optimizer=self.optimizer,
                 num_warmup_steps=num_warmup_steps,
-                num_training_steps=max_train_steps,
+                num_training_steps=self.max_grad_steps,
             )
-
+    
     def run(self):
         self.init_opts_schedulers()
 
@@ -330,53 +320,90 @@ class FinetuneMultiHeadNet():
         best_val_losses = [float('inf') for _ in range(self.num_workers)]
         best_epochs = [0 for _ in range(self.num_workers)]
         epochs_no_improve = [0 for _ in range(self.num_workers)]
+        inf_data = itertools.cycle(self.train_dataloader)
         # self.eval_one_epoch()
-        for epoch in range(self.num_train_epochs):
+        start = time.time()
+        break_flag = False
+        self.grad_step = 0
+        for batch_id in range(self.max_grad_steps*self.gradient_accumulation_steps):
             self.model.train()
-            self.train_one_epoch(epoch,)
-            # if args.split < 1.0:
-            # self.model.eval()
-            val_losses = self.eval_one_epoch()
+            batch = next(inf_data)
+            loss = self.train_one_batch(batch, batch_id)
+            assert (batch_id + 1) // self.gradient_accumulation_steps == self.grad_step, "Grad step not updated correctly"
 
-            # Early stopping
-            for i in range(self.num_workers):
-                if i not in self.active_heads:
-                    assert np.isclose(val_losses[i], best_val_losses[i], rtol=1e-3)
-                    continue
-                if val_losses[i] < best_val_losses[i]:
-                    best_val_losses[i] = val_losses[i]
-                    best_epochs[i] = epoch
-                    epochs_no_improve[i] = 0
-                else:
-                    epochs_no_improve[i] += 1
+            if self.grad_step % self.log_interval == 0:
+                elapsed_time = time.time() - start
+                logfile = self.model_dir + '/train.log'
+                self.logging(f"Batch {self.grad_step}/{self.max_grad_steps} | time {elapsed_time}", 
+                        logfile)
+                self.logging(f"active heads: {self.active_heads} | loss: {loss:.4f}", 
+                        logfile)
+                start = time.time()
 
-                self.save_checkpoint(epoch, i)
+            if self.grad_step % self.eval_interval == 0:
+                self.model.eval()
+                val_losses = self.eval_one_epoch()
 
-            to_remove = []
+                epoch = self.grad_step // self.eval_interval - 1
+                # Early stopping
+                for i in range(self.num_workers):
+                    if i not in self.active_heads:
+                        assert np.isclose(val_losses[i], best_val_losses[i], rtol=1e-3)
+                        continue
+                    if val_losses[i] < best_val_losses[i]:
+                        best_val_losses[i] = val_losses[i]
+                        best_epochs[i] = epoch
+                        epochs_no_improve[i] = 0
+                    else:
+                        epochs_no_improve[i] += 1
+
+                    self.save_checkpoint(epoch, i)
+
+                to_remove = []
+                for i in self.active_heads:
+                    if epochs_no_improve[i] >= self.patience:
+                        self.logging(f'For model {i}, early stopping and loading {best_epochs[i]}',
+                                    self.model_dir + '/train.log')
+                        self.load_checkpoint(best_epochs[i], head_idx=i)
+                        to_remove.append(i)
+                for i in to_remove:
+                    self.active_heads.remove(i)
+                self.set_require_grad()
+                if len(self.active_heads) == 0:
+                    print("All heads have stopped improving. Training complete.")
+                    print("Best epochs: ", best_epochs)
+                    self.save_checkpoint(epoch)
+                    break_flag = True
+                    break
+                start = time.time() # Reset the timer after evaluation
+
+        if not break_flag:
             for i in self.active_heads:
-                if epochs_no_improve[i] >= self.patience:
-                    self.logging(f'For model {i}, early stopping and loading {best_epochs[i]}',
-                                 self.model_dir + '/train.log')
-                    self.load_checkpoint(best_epochs[i], head_idx=i)
-                    to_remove.append(i)
-            for i in to_remove:
-                self.active_heads.remove(i)
-            # self.active_heads = [0,4]
-            # self.model.set_requires_grad_for_heads(self.active_heads)
-            self.set_require_grad()
-            if len(self.active_heads) == 0:
-                print("All heads have stopped improving. Training complete.")
-                print("Best epochs: ", best_epochs)
-                self.save_checkpoint(epoch)
-                break
+                self.load_checkpoint(best_epochs[i], head_idx=i)    
+            epoch = self.grad_step // self.eval_interval - 1
+            self.save_checkpoint(epoch)
+        else:
+            pass # best model already saved
 
-            # if epochs_no_improve >= self.patience:
-            #     self.logging(f'Early stopping at epoch {epoch}', 
-            #                 self.model_dir + '/train.log')
-            #     self.load_checkpoint(best_epoch)
-            #     break
-        for i in self.active_heads:
-            self.load_checkpoint(best_epochs[i], head_idx=i)    
+    def train_one_batch(self, batch, batch_id):
+        self.optimizer.zero_grad()
+        inputs, labels = batch
+        outputs = self.model(inputs)
+        assert len(self.active_heads) > 0, "No active heads"
+        # loss = self.criterion(outputs[:,self.active_heads], labels[:,self.active_heads].float())
+        if self.loss_fn_type == 'ce':
+            loss = self.criterion(outputs, labels)
+        elif self.loss_fn_type == 'mse':
+            loss = self.criterion(outputs, labels.float())
+        loss = loss / self.gradient_accumulation_steps
+        loss.backward()
+        if (batch_id + 1) % self.gradient_accumulation_steps == 0:
+            # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            self.optimizer.step()
+            self.lr_scheduler.step()
+            self.optimizer.zero_grad()
+            self.grad_step += 1
+        return loss.item()*self.gradient_accumulation_steps
 
     def set_require_grad(self,):
         """Set requires_grad=True only for the selected heads."""
@@ -411,45 +438,6 @@ class FinetuneMultiHeadNet():
                     except:
                         print(f"param {name} requires_grad: {param.requires_grad}")
                         raise AssertionError
-
-    def train_one_epoch(self, epoch,):
-        self.optimizer.zero_grad()
-        trainsize = len(self.train_dataloader)
-        start = time.time()
-        for i, batch in enumerate(self.train_dataloader):
-            inputs, labels = batch
-            outputs = self.model(inputs)
-            assert len(self.active_heads) > 0, "No active heads"
-            # loss = self.criterion(outputs[:,self.active_heads], labels[:,self.active_heads].float())
-            if self.loss_fn_type == 'ce':
-                loss = self.criterion(outputs, labels)
-            elif self.loss_fn_type == 'mse':
-                loss = self.criterion(outputs, labels.float())
-            loss = loss / self.gradient_accumulation_steps
-            # self.check_require_grad()
-            loss.backward()
-            # train_losses = []
-            # total_loss = 0
-            # for j in self.active_heads:
-            #     loss = self.criterion(outputs[:,j], labels[:,j].float())
-            #     loss = loss / self.gradient_accumulation_steps
-            #     total_loss += loss
-            #     train_losses.append(loss.item()*self.gradient_accumulation_steps)
-            
-            # total_loss.backward()
-            if (i + 1) % self.gradient_accumulation_steps == 0:
-                # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                self.optimizer.step()
-                self.lr_scheduler.step()
-                self.optimizer.zero_grad()
-            if (i + 1) % self.log_interval == 0:
-                elapsed_time = time.time() - start
-                logfile = self.model_dir + '/train.log'
-                self.logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | time {elapsed_time}", 
-                        logfile)
-                # formatted_losses = ', '.join([f'{loss:.4f}' for loss in train_losses])
-                self.logging(f"active heads: {self.active_heads} | loss: {loss:.4f}", 
-                        logfile)
 
     def eval_one_epoch(self):
         self.check_require_grad()

@@ -433,7 +433,7 @@ class AvgSSLPredsContextVec:
             train_dataloader = DataLoader(
                 train_data,
                 batch_size=self.batch_size,
-                shuffle=True,
+                shuffle=False, # data is already shuffled because of perm below
                 collate_fn=self.create_collate_fn(i),
                 # generator=rng,
             )

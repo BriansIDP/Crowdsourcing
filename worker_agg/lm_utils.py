@@ -590,32 +590,33 @@ class FinetuneLM:
     def run(self):
         # Train loop
         best_loss = float('inf')
-        gradient_steps = 0
         self.optimizer.zero_grad()
         break_flag = False
         inf_data = itertools.cycle(self.train_dataloader)
         start = time.time()
         best_epoch = 0
         # _ = self.eval_one_epoch()
-        for grad_step in range(self.max_grad_steps):
+        self.grad_step = 0
+        for batch_id in range(self.max_grad_steps*self.gradient_accumulation_steps):
             # training code
             self.model.train()
             batch = next(inf_data)
-            loss = self.train_one_batch(batch, grad_step)
+            loss = self.train_one_batch(batch, batch_id)
+            assert (batch_id + 1) // self.gradient_accumulation_steps == self.grad_step, "Grad step not updated correctly"
 
-            if (grad_step + 1) % self.log_interval == 0:
+            if self.grad_step % self.log_interval == 0:
                 elasped_time = time.time() - start
                 loss = loss.item() * self.gradient_accumulation_steps
                 logfile = self.model_dir + '/train.log'
-                self.logging(f"Grad step {grad_step+1}/{self.max_grad_steps} | loss: {loss} | time {elasped_time}", 
+                self.logging(f"Grad step {self.grad_step}/{self.max_grad_steps} | loss: {loss} | time {elasped_time}", 
                         logfile)
                 start = time.time()
 
             # eval code
-            if (grad_step + 1) % self.eval_interval == 0:
+            if self.grad_step % self.eval_interval == 0:
                 self.model.eval()
                 val_loss = self.eval_one_epoch()
-                epoch = grad_step // self.eval_interval
+                epoch = self.grad_step // self.eval_interval - 1
 
                 # Early stopping
                 if val_loss < best_loss:
@@ -631,10 +632,15 @@ class FinetuneLM:
                     self.logging(f'Early stopping at epoch {epoch}', 
                                 self.model_dir + '/train.log')
                     self.load_checkpoint(best_epoch)
+                    break_flag = True
                     break
-        self.load_checkpoint(best_epoch)
+        # print("best epoch: ", best_epoch)
+        # print("break flag: ", break_flag)
+        if not break_flag:
+            self.load_checkpoint(best_epoch)
+        else: pass # best model already loaded
 
-    def train_one_batch(self, batch, grad_step):
+    def train_one_batch(self, batch, batch_id):
         self.optimizer.zero_grad()
         inputs, labels = batch
         if not self.need_ests:
@@ -648,11 +654,12 @@ class FinetuneLM:
         loss = loss / self.gradient_accumulation_steps
         loss.backward()
 
-        if (grad_step + 1) % self.gradient_accumulation_steps == 0:
+        if (batch_id + 1) % self.gradient_accumulation_steps == 0:
             # torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             self.optimizer.step()
             self.lr_scheduler.step()
             self.optimizer.zero_grad()
+            self.grad_step += 1
         return loss
 
     def eval_one_epoch(self):

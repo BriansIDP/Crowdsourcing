@@ -6,7 +6,7 @@ from .lm_policies import AvgSSLPredsSepLMs, PEWNoSSLSepLMs, PEWNoSSL
 from .data_loaders import HaluQABinary
 from .data_loaders import EmbedData, NoContextData, FullContextData
 from .data_loaders import SynLogisticData, SynTwoLayerMLPData
-from .utils import TwoLayerMLP, train_neural_net, TrainWithLoaders
+from .utils import TwoLayerMLP, train_neural_net, train_neural_net_with_loaders
 from .utils import CustomDataset
 from .lm_utils import LMplusOneLayer, FinetuneLM, CombinedModel
 from .lm_utils import CrowdLayerNN

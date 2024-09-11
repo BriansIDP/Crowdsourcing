@@ -46,7 +46,7 @@ def eval_model(cfg, model, dataloader):
         elif cfg.neural_net.name in ['LMplusOneLayer']:
             probs_ = torch.sigmoid(model(inputs)).squeeze().detach().cpu()
         elif cfg.neural_net.name=='CombinedModel' and cfg.policy.name=='GTAsFeature':
-            probs_ = torch.sigmoid(model(inputs, labels.float())).squeeze().detach().cpu()
+            probs_ = torch.sigmoid(model((inputs, labels_.float()))).squeeze().detach().cpu()
         elif cfg.neural_net.name=='CombinedModel':
             probs_ = torch.sigmoid(model((inputs, ests))).squeeze().detach().cpu()
         probs.append(probs_)
@@ -129,7 +129,7 @@ def main(cfg):
         probs_com = []
         ssl_preds_com = []
         for split_type in ['val', 'train']:
-            data = get_data(cfg, split_type=split_type, with_gt=True)
+            data = get_data(cfg, split_type=split_type, with_gt=True, fold=0)
             dataloader = DataLoader(
                         data,
                         batch_size=cfg.policy.params.batch_size,
