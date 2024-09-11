@@ -1,1 +1,0 @@
-python main.py data_loader=halu_dial_embed policy=nn_mv policy.params.ground_truth=True neural_net.params.hidden_size=100 policy.params.wt_decay=1e-2

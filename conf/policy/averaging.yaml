@@ -1,4 +1,0 @@
-name: Averaging
-params:
-  apply_sigmoid: False
-  logits: True

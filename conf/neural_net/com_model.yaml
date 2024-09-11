@@ -1,9 +1,0 @@
-name: CombinedModel
-params:
-  seed: 69420
-  model_path: "gpt2"
-  dropout_prob: 0.1
-  cache_dir: "scratch/cache"
-  no_freeze_lm: True
-  n_unfreeze: 2
-  hidden_size: 128
