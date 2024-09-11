@@ -9,8 +9,6 @@ from torch.nn.utils.rnn import pad_sequence
 from transformers import AutoTokenizer
 from sklearn.preprocessing import StandardScaler
 
-from .utils import TwoLayerMLP
-
 class NoContextData:
     def __init__(self, datapath: str, 
                  model_list: list, est_type: str,
@@ -109,58 +107,6 @@ class EmbedData:
             ests = ests[shuffleidx]
             outcomes = outcomes[shuffleidx]
         return contexts, ests, outcomes
-
-class SynTwoLayerMLPData:
-    def __init__(self, seed: int, num_features: int, 
-                 num_workers: int, hidden_size: int=10, temp: float=1.0):
-        self.num_features = num_features
-        self.num_workers = num_workers
-        self.rng = np.random.default_rng(seed)
-        self.skill = self.rng.uniform(0.55, 0.8, size=(num_workers,2))
-        self.hidden_size = hidden_size
-        self.temp = temp
-        self.seed = seed
-    
-    def gen_data(self, num_samples: int, testing=False):
-        features = self.rng.normal(size=(num_samples, self.num_features))
-        true_nn = TwoLayerMLP(self.seed, self.num_features, self.hidden_size)
-        features_tensor = torch.tensor(features).float()
-        outputs = true_nn(features_tensor).detach().numpy().flatten()
-        outputs = (outputs - np.mean(outputs))/self.temp
-        logit = lambda x: 1/(1+np.exp(-x))
-        outcomes = np.array(logit(self.rng.random(num_samples)) < outputs, 
-                                dtype=int)
-        assert outcomes.shape == (num_samples,)
-        flip = self.rng.random((num_samples, self.num_workers)) > self.skill.T[outcomes,:]
-        flip = flip.astype(float)
-        ests = outcomes[:,None]*1.0 + flip*(1.0-2*outcomes[:,None])
-        if testing:
-            return ests, features, outcomes, self.skill
-        return ests, features, outcomes
-
-class SynLogisticData:
-    def __init__(self, seed: int, num_features: int, 
-                 num_workers: int, temp: float=1.0):
-        self.num_features = num_features
-        self.num_workers = num_workers
-        self.rng = np.random.default_rng(seed)
-        self.skill = self.rng.uniform(0.55, 0.8, size=(num_workers,2))
-        self.theta = self.rng.normal(size=num_features)
-        self.temp = temp
-        self.seed = seed
-    
-    def gen_data(self, num_samples: int, testing=False):
-        features = self.rng.normal(size=(num_samples, self.num_features))
-        sigmoid = lambda x: 1/(1+np.exp(-x))
-        outcomes = np.array(self.rng.random(num_samples) < sigmoid(features@self.theta/self.temp), 
-                            dtype=int)
-        flip = self.rng.random((num_samples, self.num_workers)) > self.skill.T[outcomes,:]
-        flip = flip.astype(float)
-        ests = outcomes[:,None]*1.0 + flip*(1.0-2*outcomes[:,None])
-        if testing:
-            return ests, features, outcomes, self.skill, self.theta
-        return ests, features, outcomes
-
 
 class FullContextData(Dataset):
     """Dataset for supervised fine-tuning."""

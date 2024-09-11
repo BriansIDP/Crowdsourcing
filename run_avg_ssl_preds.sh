@@ -14,13 +14,13 @@ data_loader_params=(
 policy_params=(
     "policy=avg_ssl_preds_lm"
     "policy.params.model_dir='exp/arena/pew_lm'"
-    "policy.params.lr=5e-5"
-    "policy.params.weight_decay=5e-6"
-    "policy.params.batch_size=4"
+    "policy.params.lr=1e-4"
+    "policy.params.weight_decay=1e-5"
+    "policy.params.batch_size=16"
     "policy.params.log_interval=100"
     "policy.params.probs=False"
     "policy.params.max_grad_steps=3000"
-    "policy.params.gradient_accumulation_steps=2"
+    "policy.params.gradient_accumulation_steps=1"
 )
 
     # "policy.params.model_dir='exp/truthfulqa/pew_lm'"
