@@ -1,0 +1,6 @@
+name: "NoContextData"
+params:
+  datapath: "data"
+  model_list: ["llama3","beluga","mistral","zephyr","starling"]
+  est_type: "binary" # permitted values: "binary", "prob", "logit"
+  task: "halueval" # permitted values: "halueval", "truthfulqa", "arena"

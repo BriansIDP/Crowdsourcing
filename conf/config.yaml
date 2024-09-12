@@ -1,9 +1,15 @@
 defaults:
   - policy: em_sym_bin
   - data_loader: halu_dialogue_bin
-  - override hydra/launcher: joblib
+  - neural_net: two_layer_mlp
+  # - override hydra/launcher: joblib
   - _self_
 
 main:
   seed_split: 42069
   data_split: 'train'
+  use_joblib_multirun: False
+
+eval:
+  epoch: ${main.eval.epoch}
+  epochs: ${main.eval.epochs}

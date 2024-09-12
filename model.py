@@ -9,7 +9,7 @@ import json
 from copy import deepcopy
 
 import numpy as np
-import six
+# import six
 import torch
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM
@@ -134,6 +134,7 @@ class WorkerPredictor(torch.nn.Module):
         self.outer_dim = self.inner_dim
         pos_emb_dim = self.nllms
         if self.mode == "pew":
+            # add a hidden layer for each evidence llm
             for i in range(self.nllms):
                 setattr(self, "outproj_{}".format(i+1), torch.nn.Linear(self.inner_dim, self.outer_dim))
                 setattr(self, "outlayer_{}".format(i+1), torch.nn.Linear(self.outer_dim, 1))

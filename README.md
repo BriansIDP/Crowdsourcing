@@ -18,19 +18,19 @@ Run on binary data:
 ```
 pip install -r requirements.txt
 pip install -e .
-python train.py policy=em_sym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
-python train.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
-python train.py policy=majority_vote data_loader=halu_dialogue_bin
+python main.py policy=em_sym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
+python main.py policy=em_asym_bin policy.params.seed=0 data_loader=halu_dialogue_bin
+python main.py policy=majority_vote data_loader=halu_dialogue_bin
 ```
 
 Basic usage of EM with Gaussian mixture model (GMM):
 ```
-python train.py data_loader=halu_dialogue_logit policy=em_gmm
+python main.py data_loader=halu_dialogue_logit policy=em_gmm policy.params.max_iter=200
 ```
 
 Basic usage of EM original
 ```
-python train.py data_loader=halu_dialogue_logit policy=em_orig
+python main.py data_loader=halu_dialogue_logit policy=em_orig policy.params.prior_var_of_cov=10
 ```
 
 ## Train PEW using GPT-2:
@@ -56,3 +56,17 @@ Note that the `--split` determines the split between train and validation - 0.5 
 TruthfulQA is under `data/truthfulQA`, and the training file is `truthful_qa.json`.
 
 Download [Chatbot Arena Hard](https://huggingface.co/datasets/BrianatCambridge/Arena/blob/main/arena_hard_binary.json) with binary labels, and put it under `data/Arena/arena_hard_binary.json`
+There are some local directories - please change to your local ones.
+
+AvgSSLPreds (with no contexts)
+Basic usage
+```
+python train.py data_loader=halu_dialogue_logit policy=avg_ssl_preds neural_net.params.hidden_size=100 neural_net.params.seed=0
+```
+Passing learning rate and weight decay
+```
+python train.py data_loader=halu_dialogue_logit policy=avg_ssl_preds policy.params.lr=0.001 policy.params.weight_decay=0.01 neural_net.params.hidden_size=100 neural_net.params.seed=0
+```
+
+python main_nn.py policy=lm_gt data_loader=halu_dial_bin_lm neural_net=lm_plus_one_layer
+python main_nn.py policy=lm_mv data_loader=halu_dial_bin_lm neural_net=lm_plus_one_layer

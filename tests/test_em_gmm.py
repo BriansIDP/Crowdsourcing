@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from worker_aggregation import EM_GMM
+from worker_agg import EM_GMM
 
 @pytest.fixture
 def synthetic_data1():

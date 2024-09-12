@@ -1,4 +1,0 @@
-name: "HaluQABinary"
-params:
-  datapath: "data"
-  model_list: ["beluga","mistral","vicuna","zephyr"]

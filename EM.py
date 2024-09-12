@@ -134,7 +134,7 @@ def EM_orig(data, N, sigma_bar=2, rho_bar=0, c=0.1, M=10000, v_bar=1, mu_bar=0):
         Sigma_hat_inv = np.linalg.inv(Sigma_hat)
         # z_hat = np.matmul(data, Sigma_hat_inv).sum(axis=-1) / (1 + Sigma_hat_inv.sum())
         z_hat = np.matmul(data - mu_bar, np.linalg.inv(np.ones((N, N)) * v_bar + Sigma_hat)).sum(axis=-1) * v_bar + mu_bar
-        v_hat = 1 / (v_bar + Sigma_hat_inv.sum())
+        v_hat = 1 / (1/v_bar + Sigma_hat_inv.sum())
         Y_cov = np.matmul((data-z_hat[:, None]).transpose(), data-z_hat[:, None])
         Y_cov += T * v_hat * np.ones((N, N))
         # Sigma_hat = (c * Sigma_bar + Y_cov) / (c + 2 * N + T + 1)

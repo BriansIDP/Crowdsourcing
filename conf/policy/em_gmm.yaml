@@ -1,7 +1,0 @@
-name: "EM_GMM"
-params:
-  tol: 1e-10
-  max_iter: 100
-  cov_mat_diag: 1.0
-  mean0_el: -1
-  mean1_el: 1

@@ -1,0 +1,203 @@
+import json
+from pathlib import Path
+from typing import Dict, Union
+
+import numpy as np
+import torch
+from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
+from transformers import AutoTokenizer
+from sklearn.preprocessing import StandardScaler
+
+class NoContextData:
+    def __init__(self, datapath: str, 
+                 model_list: list, est_type: str,
+                 task: str='halueval'):
+        self.datapath = datapath
+        self.model_list = model_list
+        assert est_type in ['binary', 'prob', 'logit']
+        self.est_type = est_type
+        assert task in ['halueval', 'truthfulqa', 'arena']
+        self.task = task
+
+    def get_data(self):
+        if self.task == 'halueval':
+            filepath = Path(self.datapath) / "halueval_dialogue.json"
+        elif self.task == 'truthfulqa':
+            filepath = Path(self.datapath) / "truthful_qa.json"
+        elif self.task == 'arena':
+            filepath = Path(self.datapath) / "arena_binary.json"
+        with open(filepath) as fin:
+            data = json.load(fin)
+        ests = []
+        outcomes = []
+        for datap in data:
+            if self.est_type == 'binary':
+                ests.append([datap[cllm][0]<=0.5 for cllm in self.model_list])
+            elif self.est_type == 'prob':
+                ests.append([datap[cllm][1] for cllm in self.model_list])
+            elif self.est_type == 'logit':
+                ests.append([np.log(datap[cllm][1] / datap[cllm][0]) for cllm in self.model_list])
+            else:
+                raise ValueError("Invalid ests_type {}".format(self.est_type))
+            outcomes.append(0 if datap['ref'] == 'yes' else 1)
+        ests = np.array(ests)
+        outcomes = np.array(outcomes)
+        return ests, outcomes
+
+class HaluQABinary:
+    def __init__(self, datapath, model_list):
+        self.datapath = datapath
+        self.model_list = model_list
+
+    def get_data(self):
+        est_dict = {}
+        for model in self.model_list:
+            hits = 0
+            est_dict[model] = []
+            outcomes = []
+            filepath = Path(self.datapath) / "halueval_qa_{}.json".format(model)
+            with open(filepath) as fin:
+                modeldata = json.load(fin)[model]
+            for datapiece in modeldata:
+                outcome = 0 if datapiece["ref"] == "yes" else 1
+                outcomes.append(outcome)
+                # est_dict[model].append(datapiece["prob"])
+                est = np.argmax(datapiece["prob"])
+                est_dict[model].append(est)
+                if datapiece["prob"][0] > datapiece["prob"][1] and outcome == 0:
+                    hits += 1
+                elif datapiece["prob"][1] > datapiece["prob"][0] and outcome == 1:
+                    hits += 1
+            # print("{} Acc: {:.3f}".format(model, hits/len(est_dict[model])))
+        ests = np.zeros((len(outcomes), len(self.model_list)))
+        for i, model in enumerate(self.model_list):
+            ests[:, i] = est_dict[model]
+        return ests, outcomes
+
+class EmbedData:
+    def __init__(self, filepath: str, model_list: list, seed: int,): 
+        assert Path(filepath).exists()
+        self.all_data = np.load(filepath)
+        self.num_workers = len(model_list)
+        self.rng = np.random.default_rng(seed)
+
+    def get_data(self, split=0.5, split_type='train',
+                 shuffle=False):
+        contexts = self.all_data['embeddings']
+        contexts = StandardScaler().fit_transform(contexts)
+        ests = self.all_data['ests']
+        outcomes = self.all_data['outcomes']
+        total_samples = contexts.shape[0]
+        if split_type == 'train':
+            contexts = contexts[:int(split*total_samples)]
+            ests = ests[:int(split*total_samples)]
+            outcomes = outcomes[:int(split*total_samples)]
+        elif split_type == 'val':
+            contexts = contexts[int(split*total_samples):]
+            ests = ests[int(split*total_samples):]
+            outcomes = outcomes[int(split*total_samples):]
+        else:
+            raise ValueError("Invalid split type")
+        assert contexts.shape[0] == ests.shape[0]
+        assert ests.shape[1] == self.num_workers
+        if shuffle:
+            shuffleidx = self.rng.permutation(contexts.shape[0])
+            contexts = contexts[shuffleidx]
+            ests = ests[shuffleidx]
+            outcomes = outcomes[shuffleidx]
+        return contexts, ests, outcomes
+
+class FullContextData(Dataset):
+    """Dataset for supervised fine-tuning."""
+
+    def __init__(
+        self,
+        data_path,
+        model_path,
+        evidence_llm=[],
+        evalmode: bool=False,
+        split: float=0.5,
+        device = 'cuda:0' if torch.cuda.is_available() else 'cpu',
+        with_gt: bool=False,
+        task: str='halueval',
+        cross_val: bool=False,
+        nfolds: Union[int, None]=None,
+        fold: Union[int, None]=None,
+        probs: bool=False,
+    ):
+        super().__init__()
+        with open(data_path) as fin:
+            self.data = json.load(fin)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        self.evidence_llm = evidence_llm
+        self.evalmode = evalmode
+        self.device = device
+        self.cross_val = cross_val
+        self.nfolds = nfolds
+        self.probs = probs
+
+        # if split < 1.0:
+        #     portion = int(len(self.data) * split)
+        #     if self.evalmode:
+        #         self.data = self.data[portion:] if portion > 0 else self.data[:portion]
+        #         # self.data = self.data[portion:2*portion] 
+        #     else:
+        #         self.data = self.data[:portion] if portion > 0 else self.data[portion:]
+        #         # self.data = self.data[:portion] 
+        if fold is None and not self.cross_val:
+            if split < 0.9:
+                start = int(len(self.data) * split)
+                end = int(len(self.data) * (split + 0.1))
+        else:
+            len_data = len(self.data)
+            start = int(fold*len_data/self.nfolds)
+            end = int((fold+1)*len_data/self.nfolds)
+        if self.evalmode:
+            self.data = self.data[start:end]
+        else:
+            self.data = self.data[:start] + self.data[end:]
+
+        self.with_gt = with_gt
+        self.task = task
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+        return self.preprocessing(self.data[idx])
+
+    def preprocessing(self, data):
+        if self.probs:
+            ests = [data[cllm][1] for cllm in self.evidence_llm]
+        else:
+            ests = [data[cllm][0]<=0.5 for cllm in self.evidence_llm]
+        outcomes = [0 if data['ref'] == 'yes' else 1]
+        if self.task == 'halueval':
+            input_str = "Query: {}\nResponse: {}\nIs there any non-factual or hallucinated information in the response?".format(data["query"], data["response"])
+        elif self.task == 'truthfulqa':
+            input_str = "Query: {}\nResponse: {}\nIs the answer truthful to the question?".format(data["query"], data["response"])
+        elif self.task == 'arena':
+            input_str = "Query: {}\n{}\nIs answer A better than answer B?".format(data["query"], data["response"])
+        else:   
+            raise ValueError(f"Invalid task {self.task}")
+        prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]
+        if self.with_gt:
+            return prompt_inputs, torch.tensor(ests).float(), torch.tensor(outcomes)
+        else:
+            return prompt_inputs, torch.tensor(ests).float()
+
+    def collate_fn(self, batch):
+        if self.with_gt:
+            input_ids, ests, outcomes = zip(*batch)
+            outcomes = torch.stack(outcomes).to(self.device)
+        else:
+            input_ids, ests = zip(*batch)
+        input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(self.device)
+        attn_mask = input_ids != 0
+        inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
+        ests = torch.stack(ests).to(self.device)
+        if self.with_gt:
+            return inputs, ests, outcomes
+        else:
+            return inputs, ests

@@ -1,4 +1,4 @@
-. /scratch/OpenSource/espnet/tools/anaconda/etc/profile.d/conda.sh && conda deactivate && conda activate hallucination
+# . /scratch/OpenSource/espnet/tools/anaconda/etc/profile.d/conda.sh && conda deactivate && conda activate hallucination
 
 trainfile="data/halueval_dialogue.json"
 # trainfile=data/truthfulQA/truthful_qa.json

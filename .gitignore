@@ -135,11 +135,14 @@ wandb/
 # outputs
 outputs/
 
-# logs
-logs/
+# # logs
+# logs/
 
 # multi-run outputs
 multirun/
 
 # dev
 dev/
+exp/
+scratch/
+Arena/

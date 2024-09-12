@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 
-from worker_aggregation import EMSymmetricBinary, EMAsymmetricBinary
+from worker_agg import EMSymmetricBinary, EMAsymmetricBinary
 
 @pytest.fixture
 def synthetic_data_sym():
