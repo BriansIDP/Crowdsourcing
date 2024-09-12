@@ -18,19 +18,18 @@ def get_data(datapath, model_list, task="halueval"):
     elif task == "arenabinary":
         with open(os.path.join(datapath, "arena_hard_binary_short.json")) as fin:
             data = json.load(fin)
+    elif task == "halueval":
+        with open(os.path.join(datapath, "halueval_dialogue.json")) as fin:
+            data = json.load(fin)
     for model in model_list:
         hits = 0
         dataset[model] = []
         labels = []
-        if task == "halueval":
-            with open(os.path.join(datapath, "halueval_dialogue_{}.json".format(model))) as fin:
-                modeldata = json.load(fin)[model]
-        else:
-            modeldata = data
+        modeldata = data
         for datapiece in modeldata:
             true_label = 0 if datapiece["ref"] == "yes" else 1
             labels.append(true_label)
-            probs = datapiece["prob"] if task == "halueval" else datapiece[model]
+            probs = datapiece[model]
             dataset[model].append(probs)
             # if datapiece["prob"][0] > datapiece["prob"][1] and true_label == 0:
             if probs[0] > threshold and true_label == 0:
@@ -344,8 +343,8 @@ def EM_bimodal_biased(
 
 def main(args):
     # model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
-    # model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
-    model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "hermes2", "hermes25", "mistral1"]
+    model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
+    # model_list = ["llama3", "llama3-2", "llama3-3", "llama3-4", "llama3-5", "beluga"]
     artificial = False
     v_bar_gen, mu_bar_gen = 2, 2
     mean_1 = np.array([1, 2, 1])

@@ -12,8 +12,8 @@ task=halueval
 # trainfile="data/artificial.json"
 # trainfile="data/wikibio_crosscheck_gpt3.json"
 # expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_constrained_Xtcondition
-expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_${mode}_${regression}_${task}
-# expdir=exp/worker_compression_encoder_decoder_CE_adv
+expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_${mode}_${regression}_${task}_reg
+# expdir=exp/worker_compression_encoder_decoder_CE_5workers_adv
 mkdir -p $expdir
 
 
@@ -34,7 +34,7 @@ mkdir -p $expdir
 #     --regression $regression \
 #     --mode $mode \
 #     --split 0.99 \
-#     --target_nllms 9 \
+#     --target_nllms 5 \
 #     --advlossfactor 1.0 \
 
 python train_nn.py \
@@ -56,8 +56,8 @@ python train_nn.py \
     --split 0.9 \
     --freeze_epoch 200 \
     --reg_factor 0.5 \
-    --target_nllms 9 \
-    --encdecpath exp/worker_compression_encoder_decoder_CE/checkpoint.49/pytorch_model.pt \
+    --target_nllms 5 \
+    --encdecpath exp/worker_compression_encoder_decoder_CE_5workers_adv/checkpoint.49/pytorch_model.pt \
     # --evidence_llm "mistral,llama2,vicuna,beluga,starling,openorca,gpt3" \
     # "system_0,system_1,system_2,system_3,system_4" \
     #  "llama3,beluga,mistral,zephyr,starling,openorca,dolphin,mistral1,hermes2,hermes25" \

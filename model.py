@@ -42,12 +42,12 @@ class WorkerCompressor(torch.nn.Module):
         self.nllms = nllms
         self.comp_llms = target_llms
         self.encoder = torch.nn.Linear(nllms, target_llms, bias=False)
-        # self.decoder = torch.nn.Linear(target_llms, nllms, bias=False)
-        self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(target_llms, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, nllms),
-        )
+        self.decoder = torch.nn.Linear(target_llms, nllms, bias=False)
+        # self.decoder = torch.nn.Sequential(
+        #     torch.nn.Linear(target_llms, 128),
+        #     torch.nn.ReLU(),
+        #     torch.nn.Linear(128, nllms),
+        # )
         self.encoder.weight.data = 1/ nllms * torch.ones(target_llms, nllms)
         self.kl_factor = kl_factor
         if self.kl_factor > 0:
@@ -69,10 +69,12 @@ class WorkerCompressor(torch.nn.Module):
         return loss, compressed
 
     def compute_KL(self, compressed):
-        prior = torch.rand(compressed.size(0), self.nllms).to(compressed.device)
-        normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
-        prior_compressed = torch.einsum('bi,ji->bj', prior, normalised_weights)
-        prior_compressed = grad_reverse(prior_compressed)
+        with torch.no_grad():
+            prior_compressed = torch.rand(compressed.size(0), self.comp_llms).to(compressed.device)
+            # normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
+            # prior_compressed = torch.einsum('bi,ji->bj', prior, normalised_weights)
+            # prior_compressed = grad_reverse(prior_compressed).detach()
+        compressed = grad_reverse(compressed)
         inputs = torch.cat([prior_compressed, compressed], dim=0)
         labels = torch.cat([torch.ones(compressed.size(0)), torch.zeros(compressed.size(0))], dim=0).long().to(compressed.device)
         loss = self.discriminator(inputs, labels)
@@ -113,7 +115,7 @@ class WorkerPredictor(torch.nn.Module):
         super(WorkerPredictor, self).__init__()
         self.llm = AutoModelForCausalLM.from_pretrained(
             model_path,
-            cache_dir="/scratch/NeurowaveEval/leaderboard/bot/cache",  # Change to your local directory
+            cache_dir="/data/milsrg1/huggingface/cache/gs534/cache",  # Change to your local directory
             torch_dtype=torch.bfloat16 if model_path != "gpt2" else torch.float32,
         )
         if model_path != "gpt2":
@@ -153,7 +155,7 @@ class WorkerPredictor(torch.nn.Module):
             self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size, 2)
             self.outlayer = torch.nn.Linear(2, self.nllms, bias=False)
             self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.nllms, 1), 0.3 * torch.ones(self.nllms, 1)), dim=-1)
-        elif self.mode == "pewcrowdimpxt":
+        elif self.mode == "pewcrowdimpxt" or self.mode == "pewcrowdaext":
             self.bottleneck = torch.nn.Linear(self.llm.config.hidden_size, 2)
             self.outlayer = torch.nn.Linear(2, self.nllms, bias=False)
             self.outlayer.weight.data = torch.cat((0.7 * torch.ones(self.nllms, 1), 0.3 * torch.ones(self.nllms, 1)), dim=-1)
@@ -245,7 +247,7 @@ class WorkerPredictor(torch.nn.Module):
             else:
                 pred_hidden = torch.log(torch.cat([pred_hidden.unsqueeze(-1), 1-pred_hidden.unsqueeze(-1)], dim=-1))
                 loss = torch.nn.functional.cross_entropy(pred_hidden.view(labels.size(0)*self.nllms, 2), labels.view(-1))
-        elif self.mode == "pewcrowdimpxt":
+        elif self.mode == "pewcrowdimpxt" or self.mode == "pewcrowdaext":
             if self.regression == "hardlabel":
                 labels = (workers < 0.5).long()
             latent_dist = self.bottleneck(self.drop(pred_hidden))
@@ -423,7 +425,7 @@ class WorkerPredictor(torch.nn.Module):
                 denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
                 prediction = (numerator < denominator).float().unsqueeze(-1)
                 prediction = torch.cat([1-prediction, prediction], dim=-1)
-        elif self.mode == "pewcrowdimpxt":
+        elif self.mode == "pewcrowdimpxt" or self.mode == "pewcrowdaext":
             prediction = self.bottleneck(pred_hidden)
             prediction = torch.softmax(prediction, dim=-1)
             normalised_weight = self.skilllayer(pred_hidden)

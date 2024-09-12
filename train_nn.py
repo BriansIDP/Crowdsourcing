@@ -84,7 +84,7 @@ def main(args):
 
         model = WorkerPredictor(
             args.model_path,
-            args.target_nllms if args.mode == "pewcrowdae" else len(llm_list),
+            args.target_nllms if args.mode in ["pewcrowdae", "pewcrowdaext"] else len(llm_list),
             tokenizer,
             args.regression,
             mode=args.mode,
@@ -93,7 +93,7 @@ def main(args):
             freeze_epoch=args.freeze_epoch,
         ).to(device)
 
-    if args.mode == "pewcrowdae" and args.encdecpath != "":
+    if args.mode in ["pewcrowdae", "pewcrowdaext"] and args.encdecpath != "":
         ae_model = WorkerCompressor(len(llm_list), args.target_nllms).to(device)
         state_dict = torch.load(args.encdecpath)
         ae_model.eval()
@@ -184,7 +184,7 @@ def train_one_epoch(
             if args.mode == "gt":
                 # labels = labels.view(-1)
                 labels = ((workers<0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
-            elif args.mode == "pewcrowdae":
+            elif args.mode in ["pewcrowdae", "pewcrowdaext"]:
                 with torch.no_grad():
                     aeloss, workers = ae_model(workers)
                     # workers = 1 - workers
@@ -229,13 +229,14 @@ def eval_one_epoch(
             if args.mode == "compression":
                 loss, pred = model(workers, evalmode=True)
             else:
-                if args.mode == "pewcrowdae":
+                if args.mode in ["pewcrowdae", "pewcrowdaext"]:
                     aeloss, workers = ae_model(workers)
                     # workers = 1 - workers
                 pred, hidden = model.predict(
                     inputs,
                     workers,
-                    labels=labels < 0.5,
+                    labels=(workers < 0.5).float(),
+                    withEM=True,
                 )
             if "pewcrowd" in args.mode:
                 group_labels = workers > 0.5

@@ -106,7 +106,7 @@ def main(args):
 
         model = WorkerPredictor(
             train_args["model_path"],
-            train_args["target_nllms"] if train_args["mode"] == "pewcrowdae" else len(llm_list),
+            train_args["target_nllms"] if train_args["mode"] in ["pewcrowdae", "pewcrowdaext"] else len(llm_list),
             tokenizer,
             train_args["regression"],
             mode=train_args["mode"],
@@ -116,7 +116,7 @@ def main(args):
     trained_params = torch.load(modelpath)
     msg = model.load_state_dict(trained_params, strict=False)
 
-    if train_args["mode"] == "pewcrowdae" and train_args["encdecpath"] != "":
+    if train_args["mode"] in ["pewcrowdae", "pewcrowdaext"] and train_args["encdecpath"] != "":
         ae_model = WorkerCompressor(len(llm_list), train_args["target_nllms"]).to(device)
         state_dict = torch.load(train_args["encdecpath"])
         ae_model.load_state_dict(state_dict, strict=False)
@@ -145,7 +145,7 @@ def main(args):
                 if train_args["mode"] == "compression":
                     loss, prediction = model(workers)
                 else:
-                    if train_args["mode"] == "pewcrowdae":
+                    if train_args["mode"] in ["pewcrowdae", "pewcrowdaext"]:
                         aeloss, workers = ae_model(workers)
                         # workers = 1 - workers
                     prediction, probs = model.predict(
@@ -156,7 +156,7 @@ def main(args):
                         labels=(workers < 0.5).float() if "hard" in args.aggregation else 1-workers,
                         withEM=True if "EM" in args.aggregation else False,
                     )
-                if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "pewcrowdae", "pewcrowdaepost"]:
+                if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "pewcrowdae", "pewcrowdaext", "pewcrowdaepost"]:
                     predictions.extend(prediction[:, 0].tolist())
                     prediction = prediction[:, 0] < 0.5
                     total_hits += (prediction == labels[:, 0]).sum()
