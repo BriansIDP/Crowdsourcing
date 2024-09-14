@@ -3,7 +3,7 @@ params:
   seed: 69420
   model_path: "gpt2"
   dropout_prob: 0.1
-  cache_dir: "scratch/cache"
+  cache_dir: "/data/milsrg1/huggingface/cache/gs534/cache"
   n_unfreeze: 2
   hidden_size_ow: 100
   loss_fn_type: "ce"

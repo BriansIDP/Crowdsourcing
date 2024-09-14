@@ -176,6 +176,8 @@ def main(args):
     if task in ["halueval", "truthfulqa", "arenabinary"]:
         predictions = np.array(predictions)
         all_labels = np.array(all_labels)
+        np.save(os.path.join(args.model_path, "predictions.npy"), predictions)
+        np.save(os.path.join(args.model_path, "labels.npy"), all_labels)
         if train_args["mode"] == "compression":
             total_samples = predictions.shape[0]
             predictions = predictions < 0.5

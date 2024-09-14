@@ -146,6 +146,7 @@ def main(args):
             optimizer,
             lr_scheduler,
             tokenizer,
+            valid_dataloader,
             ae_model=ae_model,
         )
         if args.split < 1.0:
@@ -169,6 +170,7 @@ def train_one_epoch(
     optimizer,
     lr_scheduler,
     tokenizer,
+    valid_dataloader,
     ae_model=None,
 ):
     optimizer.zero_grad()
@@ -208,6 +210,9 @@ def train_one_epoch(
             # loss = loss.item() * args.gradient_accumulation_steps
             loss_print = total_loss / total_count
             logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | loss: {loss_print} | time {elasped_time}", args.logfile)
+        if i == trainsize // 2 and "compression" not in args.mode:
+            eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
+            save_checkpoint(model, tokenizer, args.outputdir, "{}_1".format(epoch))
 
     return model
 
