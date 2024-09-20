@@ -4,6 +4,7 @@ import argparse
 
 import numpy as np
 from scipy.stats import norm
+from utils import calibration_curve
 
 
 np.random.seed(1)
@@ -37,7 +38,7 @@ def get_data(datapath, model_list, task="halueval"):
             # elif datapiece["prob"][1] > datapiece["prob"][0] and true_label == 1:
             elif probs[0] < threshold and true_label == 1:
                 hits += 1
-        print("{} Acc: {:.3f}".format(model, hits/len(dataset[model])))
+        print("{} Acc: {:.5f}".format(model, hits/len(dataset[model])))
     return dataset, labels
 
 
@@ -341,10 +342,17 @@ def EM_bimodal_biased(
     return Z_hat, Sigma_hat_pos, Sigma_hat_neg, m_hat_pos, m_hat_neg
 
 
+def compute_ece(predictions, labels):
+    prob_true, prob_pred = calibration_curve(labels, predictions, n_bins=5)
+    import pdb; pdb.set_trace()
+    ece = ((prob_true - prob_pred) ** 2).mean()
+    return ece
+
+
 def main(args):
-    # model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
-    model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
-    # model_list = ["llama3", "llama3-2", "llama3-3", "llama3-4", "llama3-5", "beluga"]
+    model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
+    # model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
+    # model_list = ["llama3", "llama3-2", "llama3-3", "llama3-4", "llama3-5", "beluga", "beluga2", "beluga3", "beluga4", "beluga5"]
     artificial = False
     v_bar_gen, mu_bar_gen = 2, 2
     mean_1 = np.array([1, 2, 1])
@@ -367,17 +375,21 @@ def main(args):
         data = - np.log(1 / data_tensor[:, :, 0] - 1)
 
     data_mean = data.mean(axis=1)
+    data_prob_mean = (1 / (1 + np.exp(-data))).mean(axis=1)
     pos_center = ((data_mean >= 0) * data_mean).mean()
     neg_center = ((data_mean < 0) * data_mean).mean()
     mu_bar = (pos_center - neg_center) / 2
     print("positive center: {}, negative center: {}".format(pos_center, neg_center))
-    predicts = data_mean < 0
+    predicts = data_prob_mean > 0
+    brier = ((labels - 1 + data_prob_mean) ** 2).mean()
+    print("Brier score for averaging: {:.5f}".format(brier))
+    # print("ECE: {:.5f}".format(compute_ece(1 - data_prob_mean, labels)))
     hits = (labels == predicts).sum()
-    print("Averaged Acc: {:.3f}".format(hits / len(labels)))
-    data_mode = ((data > 0) - 0.5).sum(axis=-1)
+    print("Averaged Acc: {:.5f}".format(hits / len(labels)))
+    data_mode = ((data >= 0) - 0.5).sum(axis=-1)
     predicts = data_mode < 0
     hits = (labels == predicts).sum()
-    print("Mode Acc: {:.3f}".format(hits / len(labels)))
+    print("Mode Acc: {:.5f}".format(hits / len(labels)))
 
     if args.algorithm == "em_orig":
         pred, weight, Sigma_hat = EM_orig(

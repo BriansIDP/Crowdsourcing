@@ -19,6 +19,8 @@ from transformers import SchedulerType, AdamW, get_scheduler
 from model import WorkerPredictor, WorkerCompressor, NDM
 from dataloader import WorkerDataset, collate_fn
 from torch.utils.data import DataLoader
+from scipy.stats import beta
+from sklearn.calibration import calibration_curve
 
 
 def logging(s, logfile, logging_=True, log_=True):
@@ -29,13 +31,17 @@ def logging(s, logfile, logging_=True, log_=True):
             f_log.write(s + '\n')
 
 
-def train_desc(args, predictions):
+def train_desc(args, predictions, all_labels):
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     # Hyper-parameters
     lr = 0.2
     epochs = 100
     batch_size = 32
-    predictions = torch.tensor(predictions).to(device)
+    predictions = torch.tensor(predictions, dtype=torch.float32).to(device)
+    labels = np.array(all_labels)
+    one_indices = np.where(labels==1)
+    zero_indices = np.where(labels==0)
+    predictions = torch.cat([predictions[one_indices], predictions[zero_indices]], dim=0)
     ndm_model = NDM(predictions.size(-1)).to(device)
     optimizer = torch.optim.SGD(ndm_model.parameters(), lr=lr)
     nbatches = predictions.size(0) // batch_size
@@ -67,6 +73,69 @@ def train_desc(args, predictions):
                 g['lr'] = lr
     return ndm_model
 
+
+def compute_ece(y_true, y_prob, n_bins=10):
+    """
+    Compute the Expected Calibration Error (ECE) of a classifier.
+
+    Parameters:
+    -----------
+    y_true : array-like, shape (n_samples,)
+        True binary labels (0 or 1).
+    y_prob : array-like, shape (n_samples,)
+        Predicted probabilities or confidence scores.
+    n_bins : int, optional (default=10)
+        Number of bins to discretize the predicted probabilities.
+
+    Returns:
+    --------
+    ece : float
+        The Expected Calibration Error.
+    """
+    # Compute the calibration curve
+    prob_true, prob_pred = calibration_curve(y_true, y_prob, n_bins=n_bins)
+
+    # Bin edges used by calibration_curve
+    bin_edges = np.linspace(0, 1, n_bins + 1)
+
+    # Digitize the predicted probabilities into bins
+    bin_indices = np.digitize(y_prob, bins=bin_edges, right=True) - 1
+    # Handle edge case where y_prob == 1
+    bin_indices[bin_indices == n_bins] = n_bins - 1
+
+    n = len(y_true)
+    ece = 0.0
+
+    for i in range(n_bins):
+        # Select samples in the current bin
+        bin_mask = bin_indices == i
+        bin_size = np.sum(bin_mask)
+        if bin_size > 0:
+            # Compute the average accuracy and confidence in the bin
+            bin_accuracy = np.mean(y_true[bin_mask])
+            bin_confidence = np.mean(y_prob[bin_mask])
+            # Update ECE
+            ece += (bin_size / n) * abs(bin_accuracy - bin_confidence)
+
+    return ece
+
+
+def get_indep_samples(all_workers, all_labels):
+    all_workers = np.array(all_workers)
+    all_labels = np.array(all_labels)
+    one_indices = np.where(all_labels==1)
+    zero_indices = np.where(all_labels==0)
+    one_probs = all_workers[one_indices]
+    zero_probs = all_workers[zero_indices]
+    indep_samples = []
+    for i in range(all_workers.shape[1]-1):
+        one_alpha_1, one_alpha_2, loc, scale = beta.fit(one_probs[:, i], floc=0, fscale=1)
+        one_samples = beta.rvs(one_alpha_1, one_alpha_2, size=all_workers.shape[0]//2)
+        zero_alpha_1, zero_alpha_2, _, _ = beta.fit(zero_probs[:, i], floc=0, fscale=1)
+        zero_samples = beta.rvs(zero_alpha_1, zero_alpha_2, size=all_workers.shape[0]//2)
+        samples = list(one_samples) + list(zero_samples)
+        indep_samples.append(samples)
+    return np.array(indep_samples).T
 
 def main(args):
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -128,12 +197,13 @@ def main(args):
     total_hits = 0
     total_samples = 0
     predictions = []
-    all_errors = []
+    all_workers = []
     all_labels = []
     all_sigmas = []
     with torch.no_grad():
         for i, batch in enumerate(tqdm(test_dataloader)):
             inputs, workers, labels = batch
+            all_workers.extend(workers.tolist())
             if task == "artificial":
                 for worker in workers:
                     prediction = model.density_estimtion(
@@ -152,7 +222,6 @@ def main(args):
                         inputs,
                         workers,
                         aggregation=args.aggregation,
-                        expected_error=all_errors,
                         labels=(workers < 0.5).float() if "hard" in args.aggregation else 1-workers,
                         withEM=True if "EM" in args.aggregation else False,
                     )
@@ -170,21 +239,32 @@ def main(args):
 
     if train_args["mode"] == "compression" and args.aggregation == "ndm":
         print("Training NDM for measuring independence")
-        ndm_model = train_desc(args, predictions)
+        ndm_model = train_desc(args, predictions, all_labels)
+        # independent_samples = get_indep_samples(all_workers, all_labels)
+        # ndm_model = train_desc(args, all_workers, all_labels)
 
     # all_sigmas = np.array(all_sigmas)
     if task in ["halueval", "truthfulqa", "arenabinary"]:
         predictions = np.array(predictions)
         all_labels = np.array(all_labels)
+        all_workers = np.array(all_workers)
         np.save(os.path.join(args.model_path, "predictions.npy"), predictions)
-        np.save(os.path.join(args.model_path, "labels.npy"), all_labels)
+        np.save(os.path.join(args.model_path, "workers.npy"), all_workers)
         if train_args["mode"] == "compression":
+            # Compute ECE for latent workers
+            for k in range(all_workers.shape[1]):
+                ece = compute_ece(all_labels, all_workers[:, k], n_bins=10)
+                print("ECE original worker {}: {:.5f}".format(k, ece))
+            for k in range(predictions.shape[1]):
+                ece = compute_ece(all_labels, predictions[:, k], n_bins=10)
+                print("ECE latent worker {}: {:.5f}".format(k, ece))
+
             total_samples = predictions.shape[0]
+            total_hits = ((predictions.mean(axis=-1) < 0.5) == all_labels).sum()
             predictions = predictions < 0.5
             for k in range(predictions.shape[1]):
                 hits = (predictions[:, k] == all_labels).sum(axis=0)
                 print("Accuracy worker {}: {:.5f}".format(k, hits/total_samples))
-            total_hits = ((predictions.mean(axis=-1) > 0.5) == all_labels).sum()
         # np.save("outputs/sigma_reg.npy", np.array(predictions))
         print("Accuracy: {:.5f}".format(total_hits / total_samples))
     elif task == "crosscheck":

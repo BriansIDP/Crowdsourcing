@@ -12,10 +12,11 @@ import numpy as np
 # import six
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, LongformerModel
 from transformers import AutoModelForSeq2SeqLM
 from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
 from peft import PeftConfig, PeftModel
+from scipy.stats import beta
 
 
 class GradReverse(torch.autograd.Function):
@@ -41,22 +42,25 @@ class WorkerCompressor(torch.nn.Module):
         super(WorkerCompressor, self).__init__()
         self.nllms = nllms
         self.comp_llms = target_llms
-        self.encoder = torch.nn.Linear(nllms, target_llms, bias=False)
-        self.decoder = torch.nn.Linear(target_llms, nllms, bias=False)
+        self.encoder = torch.nn.Linear(nllms+2, target_llms, bias=False)
+        # self.encoder = torch.nn.Linear(nllms, target_llms, bias=False)
+        self.decoder = torch.nn.Linear(target_llms, nllms)
         # self.decoder = torch.nn.Sequential(
         #     torch.nn.Linear(target_llms, 128),
         #     torch.nn.ReLU(),
         #     torch.nn.Linear(128, nllms),
         # )
-        self.encoder.weight.data = 1/ nllms * torch.ones(target_llms, nllms)
+        self.encoder.weight.data = torch.zeros(target_llms, nllms+2)
+        # self.encoder.weight.data = torch.zeros(target_llms, nllms)
         self.kl_factor = kl_factor
         if self.kl_factor > 0:
             self.discriminator = NDM(target_llms)
         self.epoch = 0
 
     def forward(self, workers, evalmode=False):
+        workers_aug = torch.cat([workers, workers.new_ones(workers.size(0), 1), workers.new_zeros(workers.size(0), 1)], dim=-1)
         normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
-        compressed = torch.einsum('bi,ji->bj', workers, normalised_weights)
+        compressed = torch.einsum('bi,ji->bj', workers_aug, normalised_weights)
         recovered = torch.sigmoid(self.decoder(compressed))
         if evalmode:
             loss = (recovered - workers).abs().mean()
@@ -70,10 +74,13 @@ class WorkerCompressor(torch.nn.Module):
 
     def compute_KL(self, compressed):
         with torch.no_grad():
-            prior_compressed = torch.rand(compressed.size(0), self.comp_llms).to(compressed.device)
-            # normalised_weights = torch.softmax(self.encoder.weight, dim=-1)
-            # prior_compressed = torch.einsum('bi,ji->bj', prior, normalised_weights)
-            # prior_compressed = grad_reverse(prior_compressed).detach()
+            priors = []
+            for i in range(self.comp_llms):
+                one_alpha_1, one_alpha_2, loc, scale = beta.fit(compressed[:, i].cpu().numpy(), floc=0, fscale=1)
+                one_samples = beta.rvs(one_alpha_1, one_alpha_2, size=compressed.size(0))
+                priors.append(torch.tensor(one_samples).to(compressed.device).view(-1, 1).float())
+            prior_compressed = torch.cat(priors, dim=-1)
+            # prior_compressed = torch.rand(compressed.size(0), self.comp_llms).to(compressed.device)
         compressed = grad_reverse(compressed)
         inputs = torch.cat([prior_compressed, compressed], dim=0)
         labels = torch.cat([torch.ones(compressed.size(0)), torch.zeros(compressed.size(0))], dim=0).long().to(compressed.device)
@@ -113,12 +120,13 @@ class WorkerPredictor(torch.nn.Module):
         freeze_epoch=0,
     ):
         super(WorkerPredictor, self).__init__()
+        self.model_path = model_path
         self.llm = AutoModelForCausalLM.from_pretrained(
             model_path,
             cache_dir="/data/milsrg1/huggingface/cache/gs534/cache",  # Change to your local directory
-            torch_dtype=torch.bfloat16 if model_path != "gpt2" else torch.float32,
+            torch_dtype=torch.float32,
         )
-        if model_path != "gpt2":
+        if model_path != "gpt2" and "flan" not in model_path:
             peft_config = LoraConfig(
                 task_type=TaskType.CAUSAL_LM,
                 inference_mode=False,
@@ -202,8 +210,11 @@ class WorkerPredictor(torch.nn.Module):
             output_hidden_states=True,
             return_dict=True,
         )
-        insizes = attention_mask.sum(dim=-1) - 1
-        pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
+        if "longformer" in self.model_path:
+            pred_hidden = outputs.pooler_output
+        else:
+            insizes = attention_mask.sum(dim=-1) - 1
+            pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
         if self.mode == "pew":
             pred_hidden = pred_hidden.unsqueeze(1).repeat(1, self.nllms, 1)
             pred_hidden = torch.cat([pred_hidden, workers], dim=-1)

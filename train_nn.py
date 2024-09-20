@@ -19,8 +19,10 @@ from dataloader import WorkerDataset, collate_fn
 from torch.utils.data import DataLoader
 
 
-torch.manual_seed(3407)
-random.seed(3407)
+seedlist = [3407, 1234, 2345]
+seed = seedlist[2]
+torch.manual_seed(seed)
+random.seed(seed)
 
 
 def logging(s, logfile, logging_=True, log_=True):
@@ -210,7 +212,7 @@ def train_one_epoch(
             # loss = loss.item() * args.gradient_accumulation_steps
             loss_print = total_loss / total_count
             logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | loss: {loss_print} | time {elasped_time}", args.logfile)
-        if i == trainsize // 2 and "compression" not in args.mode:
+        if args.task == "arenabinary" and i == trainsize // 2 and "compression" not in args.mode:
             eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
             save_checkpoint(model, tokenizer, args.outputdir, "{}_1".format(epoch))
 
