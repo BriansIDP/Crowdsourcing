@@ -6,6 +6,9 @@ import numpy as np
 from scipy.stats import norm
 from utils import calibration_curve
 
+from dawid_skene_model import DawidSkeneModel
+from dawid_skene_model import list2array
+
 
 np.random.seed(1)
 
@@ -350,8 +353,8 @@ def compute_ece(predictions, labels):
 
 
 def main(args):
-    model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
-    # model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
+    # model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
+    model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
     # model_list = ["llama3", "llama3-2", "llama3-3", "llama3-4", "llama3-5", "beluga", "beluga2", "beluga3", "beluga4", "beluga5"]
     artificial = False
     v_bar_gen, mu_bar_gen = 2, 2
@@ -372,15 +375,28 @@ def main(args):
 
         # Direct averaging
         data_tensor = np.minimum(0.9995, data_tensor)
+        data_prob = data_tensor[:, :, 0]
+        data_prob_mean = data_prob.mean(axis=-1)
         data = - np.log(1 / data_tensor[:, :, 0] - 1)
 
+    # Dawid Skene
+    data_binary  = (data_prob < 0.5)[:, :, None].astype(int)
+    model = DawidSkeneModel(2, max_iter=45, tolerance=10e-100)
+    dataset_tensor = list2array(2, data_binary)
+    marginal_predict, error_rates, worker_reliability, predict_label = model.run(dataset_tensor)
+    hits = ((predict_label[:, 0] < 0.5) == labels).sum()
+    print("Dawid Skene accuracy: {:.5f}".format(hits / labels.shape[0]))
+    print("="*89)
+    exit()
+    # print("data means: {}".format(data_prob.mean(axis=0)))
+    # data = data - data.mean(axis=0)
     data_mean = data.mean(axis=1)
     data_prob_mean = (1 / (1 + np.exp(-data))).mean(axis=1)
     pos_center = ((data_mean >= 0) * data_mean).mean()
     neg_center = ((data_mean < 0) * data_mean).mean()
     mu_bar = (pos_center - neg_center) / 2
     print("positive center: {}, negative center: {}".format(pos_center, neg_center))
-    predicts = data_prob_mean > 0
+    predicts = data_prob_mean <= 0.5
     brier = ((labels - 1 + data_prob_mean) ** 2).mean()
     print("Brier score for averaging: {:.5f}".format(brier))
     # print("ECE: {:.5f}".format(compute_ece(1 - data_prob_mean, labels)))

@@ -19,8 +19,8 @@ from dataloader import WorkerDataset, collate_fn
 from torch.utils.data import DataLoader
 
 
-seedlist = [3407, 1234, 2345]
-seed = seedlist[2]
+seedlist = [3407, 1234, 2345, 6666, 8888]
+seed = seedlist[0]
 torch.manual_seed(seed)
 random.seed(seed)
 
@@ -192,6 +192,7 @@ def train_one_epoch(
                 with torch.no_grad():
                     aeloss, workers = ae_model(workers)
                     # workers = 1 - workers
+            # import pdb; pdb.set_trace()
             loss = model(
                 inputs,
                 workers,
@@ -212,7 +213,7 @@ def train_one_epoch(
             # loss = loss.item() * args.gradient_accumulation_steps
             loss_print = total_loss / total_count
             logging(f"Epoch {epoch} | Batch {i+1}/{trainsize} | loss: {loss_print} | time {elasped_time}", args.logfile)
-        if args.task == "arenabinary" and i == trainsize // 2 and "compression" not in args.mode:
+        if args.task == "arenabinary" and (i == trainsize // 2 and trainsize > 1000) and "compression" not in args.mode:
             eval_one_epoch(args, epoch, model, valid_dataloader, tokenizer, ae_model=ae_model)
             save_checkpoint(model, tokenizer, args.outputdir, "{}_1".format(epoch))
 

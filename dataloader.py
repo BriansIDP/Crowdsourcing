@@ -42,12 +42,13 @@ class WorkerDataset(Dataset):
         self.template = template
 
         if split < 0.9:
-            start = int(len(self.data) * split)
-            end = int(len(self.data) * (split + 0.1))
+            end = int(len(self.data) * split)
+            start = int(len(self.data) * 0.9)
+            # end = int(len(self.data) * (split + 0.1))
             if self.evalmode:
-                self.data = self.data[start:end]
+                self.data = self.data[start:start+250]
             else:
-                self.data = self.data[:start] + self.data[end:]
+                self.data = self.data[:end] # + self.data[end:]
         elif split == 0.9:
             start = int(len(self.data) * split)
             # end = int(len(self.data) * (split + 0.05))
@@ -64,21 +65,7 @@ class WorkerDataset(Dataset):
     def preprocessing(self, data):
         datasamples = []
         labels = []
-        if self.mode == "pew":
-            for llm in self.evidence_llm:
-                datasample = []
-                for cllm in self.evidence_llm:
-                    # if cllm != llm:
-                    datasample.append(max(0.0001, min(0.9999, data[cllm][0])))
-                datasamples.append(datasample)
-                if self.evalmode and self.mode == "pew":
-                    if self.task in ["halueval", "truthfulqa"]:
-                        labels.append(0 if data['ref'] == 'yes' else 1)
-                    elif self.task == "crosscheck":
-                        labels.append(data['ref'])
-                else:
-                    labels.append(max(0.0001, min(0.9999, data[llm][0])))
-        elif self.mode == "gt" or "compression" in self.mode or "pewcrowd" in self.mode:
+        if self.mode == "gt" or "compression" in self.mode or "pewcrowd" in self.mode:
             datasamples = [max(0.0001, min(0.9999, data[cllm][0])) for cllm in self.evidence_llm]
             labels = [0 if data['ref'] == 'yes' else 1]
         else:
@@ -105,6 +92,7 @@ def collate_fn(batch):
     input_ids, workers, labels = zip(*batch)
     input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(device)
     attn_mask = input_ids != 0
+    attn_mask[:, 0] = True
     inputs = {"input_ids": input_ids, "attention_mask": attn_mask}
     workers = torch.stack(workers).to(device)
     labels = torch.stack(labels).to(device)

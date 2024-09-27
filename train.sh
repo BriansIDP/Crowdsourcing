@@ -3,16 +3,17 @@
 trainfile="data/halueval_dialogue.json"
 # trainfile=data/truthfulQA/truthful_qa.json
 regression=skill
-# mode=pewcrowdae
-mode=gt
+# regression=hardlabel
+mode=pewcrowdimp
+# mode=gt
 # mode=compression
 task=halueval
 # task=truthfulqa
 
 # trainfile="data/artificial.json"
 # trainfile="data/wikibio_crosscheck_gpt3.json"
-expdir=exp/pewcrowd_longformer_mse_direct_crowdlayer_${mode}_${regression}_${task}
-# expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_${mode}_${regression}_${task}_reg
+expdir=exp/pewcrowd_roberta_mse_direct_crowdlayer_${mode}_${regression}_${task}
+# expdir=exp/pewcrowd_gpt2_mse_direct_crowdlayer_${mode}_${regression}_${task}_reg_seed2
 # expdir=exp/worker_compression_encoder_decoder_CE_01bias_1sworkers
 mkdir -p $expdir
 
@@ -38,9 +39,9 @@ mkdir -p $expdir
 # # llama3,llama3-2,llama3-3,llama3-4,llama3-5,beluga,beluga2,beluga3,beluga4,beluga5
 
 python train_nn.py \
-    --model_path google/flan-t5-small \
+    --model_path "FacebookAI/roberta-base" \
     --batch_size 8 \
-    --learning_rate 1e-4 \
+    --learning_rate 20e-6 \
     --gradient_accumulation_steps 1 \
     --num_train_epochs 10 \
     --num_warmup_steps 0.03 \
@@ -55,7 +56,8 @@ python train_nn.py \
     --mode $mode \
     --split 0.9 \
     --freeze_epoch 200 \
-    --reg_factor 0.0 \
+    --reg_factor 0.2 \
+    # --lora_rank 8 \
     # --target_nllms 9 \
     # --encdecpath exp/worker_compression_encoder_decoder_CE_01bias_9workers_adv/checkpoint.49/pytorch_model.pt \
     # --evidence_llm "mistral,llama2,vicuna,beluga,starling,openorca,gpt3" \

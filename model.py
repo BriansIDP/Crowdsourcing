@@ -12,8 +12,8 @@ import numpy as np
 # import six
 import torch
 import torch.nn.functional as F
-from transformers import AutoModelForCausalLM, LongformerModel
-from transformers import AutoModelForSeq2SeqLM
+from transformers import AutoModelForCausalLM, MambaForCausalLM
+from transformers import AutoModelForSeq2SeqLM, RobertaModel
 from peft import get_peft_config, get_peft_model, LoraConfig, TaskType
 from peft import PeftConfig, PeftModel
 from scipy.stats import beta
@@ -121,12 +121,18 @@ class WorkerPredictor(torch.nn.Module):
     ):
         super(WorkerPredictor, self).__init__()
         self.model_path = model_path
-        self.llm = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            cache_dir="/data/milsrg1/huggingface/cache/gs534/cache",  # Change to your local directory
-            torch_dtype=torch.float32,
-        )
-        if model_path != "gpt2" and "flan" not in model_path:
+        if "roberta" in model_path:
+            self.llm = RobertaModel.from_pretrained(
+                "FacebookAI/roberta-base",
+                cache_dir="/data/milsrg1/huggingface/cache/gs534/cache",
+            )
+        else:
+            self.llm = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                cache_dir="/data/milsrg1/huggingface/cache/gs534/cache",  # Change to your local directory
+                torch_dtype=torch.float32,
+            )
+        if "llama" in model_path or "gemma" in model_path:
             peft_config = LoraConfig(
                 task_type=TaskType.CAUSAL_LM,
                 inference_mode=False,
@@ -210,10 +216,10 @@ class WorkerPredictor(torch.nn.Module):
             output_hidden_states=True,
             return_dict=True,
         )
-        if "longformer" in self.model_path:
-            pred_hidden = outputs.pooler_output
+        insizes = attention_mask.sum(dim=-1) - 1
+        if "roberta" in self.model_path:
+            pred_hidden = outputs.last_hidden_state[:, 0]
         else:
-            insizes = attention_mask.sum(dim=-1) - 1
             pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
         if self.mode == "pew":
             pred_hidden = pred_hidden.unsqueeze(1).repeat(1, self.nllms, 1)
@@ -377,7 +383,10 @@ class WorkerPredictor(torch.nn.Module):
             return_dict=True,
         )
         insizes = attention_mask.sum(dim=-1) - 1
-        pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
+        if "roberta" in self.model_path:
+            pred_hidden = outputs.last_hidden_state[:, 0]
+        else:
+            pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
 
         if self.mode == "pew":
             pred_hidden = pred_hidden.unsqueeze(1).repeat(1, self.nllms, 1)
@@ -434,7 +443,8 @@ class WorkerPredictor(torch.nn.Module):
                 numerator = sigma * torch.exp(numerator.sum(dim=-1))
                 denominator = torch.log(p_r_1).unsqueeze(0) * labels + torch.log(1 - p_r_1) * (1 - labels)
                 denominator = (1 - sigma) * torch.exp(denominator.sum(dim=-1))
-                prediction = (numerator < denominator).float().unsqueeze(-1)
+                # prediction = (numerator < denominator).float().unsqueeze(-1)
+                prediction = (denominator / (numerator + denominator)).float().unsqueeze(-1)
                 prediction = torch.cat([1-prediction, prediction], dim=-1)
         elif self.mode == "pewcrowdimpxt" or self.mode == "pewcrowdaext":
             prediction = self.bottleneck(pred_hidden)

@@ -151,9 +151,9 @@ def main(args):
         args.testfile,
         tokenizer,
         evidence_llm=llm_list,
-        evalmode=True,
+        evalmode=True if train_args['split'] >= 0.9 else False,
         task=task,
-        split=1.0, # train_args['split'] if 'split' in train_args else 1.0,
+        split=1.0 if train_args['split'] >= 0.9 else train_args['split'], # train_args['split'] if 'split' in train_args else 1.0,
         mode="gt", # train_args["mode"] if "pewcrowd" not in train_args["mode"] else "gt",
     )
     test_dataloader = DataLoader(
@@ -250,6 +250,12 @@ def main(args):
         all_workers = np.array(all_workers)
         np.save(os.path.join(args.model_path, "predictions.npy"), predictions)
         np.save(os.path.join(args.model_path, "workers.npy"), all_workers)
+        np.save(os.path.join(args.model_path, "labels.npy"), all_labels)
+
+        majority_voting = ((all_workers<0.5).sum(axis=-1) > (all_workers.shape[-1] // 2))
+        hits = (majority_voting == all_labels).sum()
+        print("Acc via majority voting: {:.5f}".format(hits / all_labels.size))
+
         if train_args["mode"] == "compression":
             # Compute ECE for latent workers
             for k in range(all_workers.shape[1]):
