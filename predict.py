@@ -244,7 +244,7 @@ def main(args):
         # ndm_model = train_desc(args, all_workers, all_labels)
 
     # all_sigmas = np.array(all_sigmas)
-    if task in ["halueval", "truthfulqa", "arenabinary"]:
+    if task in ["halueval", "truthfulqa", "arenabinary", "mmlujudge"]:
         predictions = np.array(predictions)
         all_labels = np.array(all_labels)
         all_workers = np.array(all_workers)

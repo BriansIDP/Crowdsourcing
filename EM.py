@@ -20,10 +20,13 @@ def get_data(datapath, model_list, task="halueval"):
         with open(os.path.join(datapath, "truthful_qa.json")) as fin:
             data =json.load(fin)
     elif task == "arenabinary":
-        with open(os.path.join(datapath, "arena_hard_binary_short.json")) as fin:
+        with open(os.path.join(datapath, "arena_hard_binary_reverse_short.json")) as fin:
             data = json.load(fin)
     elif task == "halueval":
         with open(os.path.join(datapath, "halueval_dialogue.json")) as fin:
+            data = json.load(fin)
+    elif task == "mmlujudge":
+        with open(os.path.join(datapath, "mmlu_binary_short.json")) as fin:
             data = json.load(fin)
     for model in model_list:
         hits = 0
@@ -353,9 +356,10 @@ def compute_ece(predictions, labels):
 
 
 def main(args):
-    # model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
-    model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
+    model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
+    # model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
     # model_list = ["llama3", "llama3-2", "llama3-3", "llama3-4", "llama3-5", "beluga", "beluga2", "beluga3", "beluga4", "beluga5"]
+    # model_list.extend([llm + "_rev" for llm in model_list])
     artificial = False
     v_bar_gen, mu_bar_gen = 2, 2
     mean_1 = np.array([1, 2, 1])
@@ -387,7 +391,6 @@ def main(args):
     hits = ((predict_label[:, 0] < 0.5) == labels).sum()
     print("Dawid Skene accuracy: {:.5f}".format(hits / labels.shape[0]))
     print("="*89)
-    exit()
     # print("data means: {}".format(data_prob.mean(axis=0)))
     # data = data - data.mean(axis=0)
     data_mean = data.mean(axis=1)

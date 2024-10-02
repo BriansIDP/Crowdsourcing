@@ -183,6 +183,7 @@ class WorkerPredictor(torch.nn.Module):
             self.correlationlayer.weight.data = 1/(self.target_llms) * torch.ones(nllms, self.target_llms)
         elif self.mode == "gt":
             self.output_layer = torch.nn.Linear(self.llm.config.hidden_size, 2)
+            self.output_layer.bias.data = self.output_layer.bias.data * 0
         else:
             # self.kproj = torch.nn.Linear(self.llm.config.hidden_size+1+pos_emb_dim, 64)
             self.qproj = torch.nn.Linear(self.llm.config.hidden_size+1+pos_emb_dim, 64)
@@ -190,7 +191,7 @@ class WorkerPredictor(torch.nn.Module):
             self.z_hat_proj = torch.nn.Linear(self.outer_dim, 1)
             # self.pos_emb = torch.nn.Embedding(self.nllms, pos_emb_dim)
         self.activation = torch.nn.ReLU()
-        self.drop = torch.nn.Dropout(0.1)
+        self.drop = torch.nn.Dropout(0.0)
         self.tokenizer = tokenizer
         self.regression = regression
         self.regularisation = reg_factor
@@ -254,6 +255,7 @@ class WorkerPredictor(torch.nn.Module):
             latent_dist = self.bottleneck(self.drop(pred_hidden))
             latent_dist = torch.softmax(latent_dist, dim=-1)
             pred_hidden = self.outlayer(latent_dist)
+            pred_hidden = torch.clamp(pred_hidden, min=0.0001, max=0.9999)
             # normalised_weight = torch.softmax(self.outlayer.weight, -1).unsqueeze(0)
             # pred_hidden = (latent_dist.unsqueeze(1) * normalised_weight).sum(dim=-1)
             if self.regression == "skill":
@@ -276,7 +278,8 @@ class WorkerPredictor(torch.nn.Module):
                 extra_loss = ((normalised_weight - self.outlayer.weight.data) ** 2).mean()
                 normalised_weight = self.outlayer.weight.unsqueeze(0)
             else:
-                pred_hidden = (normalised_weight * latent_dist.detach().unsqueeze(1)).sum(dim=-1)
+                pred_hidden = (normalised_weight * latent_dist.unsqueeze(1)).sum(dim=-1)
+                # extra_loss = ((normalised_weight - self.outlayer.weight.data) ** 2).mean()
                 extra_loss = 0
             if self.regression == "skill":
                 # loss = ((pred_hidden.view(-1) - labels.view(-1)) ** 2).mean()
@@ -305,30 +308,6 @@ class WorkerPredictor(torch.nn.Module):
             else:
                 pred_hidden = torch.log(torch.cat([pred_hidden.unsqueeze(-1), 1-pred_hidden.unsqueeze(-1)], dim=-1))
                 loss = torch.nn.functional.cross_entropy(pred_hidden.view(labels.size(0)*self.nllms, 2), labels.view(-1))
-            
-        elif self.mode == "transformer":
-            # masking workers and get labels
-            workers_in = workers.unsqueeze(-1).repeat(1, self.nllms, 1)
-            input_mask_diag = torch.eye(self.nllms).unsqueeze(0).repeat(workers.size(0), 1, 1).to(workers.device)
-            input_mask_diag = input_mask_diag.view(-1, self.nllms)
-            # input_mask = torch.rand(workers.size(0)*workers.size(1), workers.size(1)).to(workers.device) > random.random()
-            # input_mask = 1 - (input_mask * (1 - input_mask_diag))
-            workers_in = workers_in.view(-1, self.nllms)
-            workers_in = workers_in.masked_fill(input_mask_diag.bool(), 0).unsqueeze(-1)
-
-            pos_inds = torch.tensor([i for i in range(self.nllms)]).to(workers.device)
-            # pos_embs = self.pos_emb(pos_inds).unsqueeze(0).repeat(workers_in.size(0), 1, 1)
-            pos_embs = torch.nn.functional.one_hot(torch.arange(0, self.nllms)).to(workers.device).unsqueeze(0).repeat(workers_in.size(0), 1, 1)
-            workers_in = torch.cat([workers_in, pos_embs], dim=-1)
-            enc_out = self.transformer_encoder(workers_in)
-            output_mean = self.output_mean(enc_out).squeeze(-1)
-            output_mean = torch.diagonal(output_mean.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
-            output_logdev = self.output_logdev(enc_out).squeeze(-1)
-            output_logdev = torch.diagonal(output_logdev.view(workers.size(0), workers.size(1), -1), dim1=1, dim2=2)
-            # loss = output_logdev + 0.5 * (output_mean - labels) ** 2 / (torch.exp(output_logdev) ** 2)
-            # loss = output_logdev + 0.5 * (labels) ** 2 / (torch.exp(output_logdev) ** 2)
-            loss = (output_mean - labels) ** 2
-            loss = loss.mean()
         elif self.mode == "gt":
             prediction = self.output_layer(pred_hidden)
             loss = torch.nn.functional.cross_entropy(prediction, labels)

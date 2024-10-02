@@ -80,6 +80,8 @@ class WorkerDataset(Dataset):
             input_str = "Query: {}\nResponse: {}\nIs the answer truthful to the question?".format(data["query"], data["response"])
         elif self.task == "arenabinary":
             input_str = "Query: {}\n{}\nIs answer A better than answer B?".format(data["query"], data["response"])
+        elif self.task == "mmlujudge":
+            input_str = "Question:\n{}\nAnswer:\n{}\nIs the Answer to the Question correct?".format(data["query"], data["response"])
         elif self.task == "crosscheck":
             input_str = "Passage: {}\nIs there any non-factual or hallucinated information in the passage?".format(data["query"])
         else:

@@ -186,8 +186,8 @@ def train_one_epoch(
             loss, _ = model(workers)
         else:
             if args.mode == "gt":
-                # labels = labels.view(-1)
-                labels = ((workers<0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
+                labels = labels.view(-1)
+                # labels = ((workers<0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
             elif args.mode in ["pewcrowdae", "pewcrowdaext"]:
                 with torch.no_grad():
                     aeloss, workers = ae_model(workers)
@@ -257,8 +257,8 @@ def eval_one_epoch(
                     hits += (labels[:, 0] == pred).sum()
                 total += pred.size(0)
             elif args.mode == "gt":
-                labels = labels.view(-1)
-                # labels = ((workers < 0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
+                # labels = labels.view(-1)
+                labels = ((workers < 0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
                 hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
                 total += pred.size(0)
             else:
