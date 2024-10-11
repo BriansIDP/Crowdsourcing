@@ -20,7 +20,7 @@ from torch.utils.data import DataLoader
 
 
 seedlist = [3407, 1234, 2345, 6666, 8888]
-seed = seedlist[3]
+seed = seedlist[0]
 torch.manual_seed(seed)
 random.seed(seed)
 

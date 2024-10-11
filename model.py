@@ -222,6 +222,8 @@ class WorkerPredictor(torch.nn.Module):
             pred_hidden = outputs.last_hidden_state[:, 0]
         else:
             pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
+        # pred_hidden = pred_hidden * 0
+
         if self.mode == "pew":
             pred_hidden = pred_hidden.unsqueeze(1).repeat(1, self.nllms, 1)
             pred_hidden = torch.cat([pred_hidden, workers], dim=-1)
@@ -366,6 +368,8 @@ class WorkerPredictor(torch.nn.Module):
             pred_hidden = outputs.last_hidden_state[:, 0]
         else:
             pred_hidden = outputs.hidden_states[-1][torch.arange(insizes.size(0)), insizes]
+
+        # pred_hidden = pred_hidden * 0
 
         if self.mode == "pew":
             pred_hidden = pred_hidden.unsqueeze(1).repeat(1, self.nllms, 1)

@@ -153,7 +153,7 @@ def main(args):
         evidence_llm=llm_list,
         evalmode=True if train_args['split'] >= 0.9 else False,
         task=task,
-        split=1.0 if train_args['split'] >= 0.9 else train_args['split'], # train_args['split'] if 'split' in train_args else 1.0,
+        split=1.0 if train_args['split'] >= 0.9 else train_args['split'],
         mode="gt", # train_args["mode"] if "pewcrowd" not in train_args["mode"] else "gt",
     )
     test_dataloader = DataLoader(
@@ -200,6 +200,7 @@ def main(args):
     all_workers = []
     all_labels = []
     all_sigmas = []
+    all_pred_workers = []
     with torch.no_grad():
         for i, batch in enumerate(tqdm(test_dataloader)):
             inputs, workers, labels = batch
@@ -229,6 +230,7 @@ def main(args):
                     predictions.extend(prediction[:, 0].tolist())
                     prediction = prediction[:, 0] < 0.5
                     total_hits += (prediction == labels[:, 0]).sum()
+                    all_pred_workers.extend(probs.view(workers.size(0), -1, 2).tolist())
                 elif train_args["mode"] == "compression":
                     # predictions.extend((prediction < 0.5).tolist())
                     predictions.extend(prediction.tolist())
@@ -248,9 +250,11 @@ def main(args):
         predictions = np.array(predictions)
         all_labels = np.array(all_labels)
         all_workers = np.array(all_workers)
-        np.save(os.path.join(args.model_path, "predictions.npy"), predictions)
+        all_pred_workers = np.array(all_pred_workers)
+        np.save(os.path.join(args.model_path, "predictions_mean.npy"), predictions)
         np.save(os.path.join(args.model_path, "workers.npy"), all_workers)
         np.save(os.path.join(args.model_path, "labels.npy"), all_labels)
+        np.save(os.path.join(args.model_path, "pred_workers.npy"), all_pred_workers)
 
         majority_voting = ((all_workers<0.5).sum(axis=-1) > (all_workers.shape[-1] // 2))
         hits = (majority_voting == all_labels).sum()
