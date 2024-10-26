@@ -154,7 +154,7 @@ def main(args):
         evalmode=True if train_args['split'] >= 0.9 else False,
         task=task,
         split=1.0 if train_args['split'] >= 0.9 else train_args['split'],
-        mode="gt", # train_args["mode"] if "pewcrowd" not in train_args["mode"] else "gt",
+        mode="gt" if "bt" not in train_args["mode"] else "btgt",
     )
     test_dataloader = DataLoader(
         testdata,
@@ -180,6 +180,7 @@ def main(args):
             train_args["regression"],
             mode=train_args["mode"],
             lora_config=lora_config,
+            beta_factor=train_args["beta_factor"],
         ).to(device)
     modelpath = os.path.join(args.model_path, args.model_ckpt, "pytorch_model.pt")
     trained_params = torch.load(modelpath)
@@ -191,6 +192,8 @@ def main(args):
         ae_model.load_state_dict(state_dict, strict=False)
     else:
         ae_model = None
+    if "bt" in train_args["mode"]:
+        train_args["mode"] = train_args["mode"][2:]
 
     model.eval()
 
@@ -226,7 +229,17 @@ def main(args):
                         labels=(workers < 0.5).float() if "hard" in args.aggregation else 1-workers,
                         withEM=True if "EM" in args.aggregation else False,
                     )
-                if train_args["mode"] in ["gt", "pewcrowd", "pewcrowdimp", "pewcrowdimpxt", "pewcrowdae", "pewcrowdaext", "pewcrowdaepost"]:
+                if train_args["mode"] in [
+                    "gt",
+                    "crowd", 
+                    "pewcrowd",
+                    "pewcrowdimp",
+                    "pewcrowdimpxt",
+                    "pewcrowdae",
+                    "pewcrowdaext",
+                    "pewcrowdaepost",
+                    "skillagg",
+                ]:
                     predictions.extend(prediction[:, 0].tolist())
                     prediction = prediction[:, 0] < 0.5
                     total_hits += (prediction == labels[:, 0]).sum()
@@ -251,10 +264,10 @@ def main(args):
         all_labels = np.array(all_labels)
         all_workers = np.array(all_workers)
         all_pred_workers = np.array(all_pred_workers)
-        np.save(os.path.join(args.model_path, "predictions_mean.npy"), predictions)
-        np.save(os.path.join(args.model_path, "workers.npy"), all_workers)
-        np.save(os.path.join(args.model_path, "labels.npy"), all_labels)
-        np.save(os.path.join(args.model_path, "pred_workers.npy"), all_pred_workers)
+        # np.save(os.path.join(args.model_path, "predictions_mean.npy"), predictions)
+        # np.save(os.path.join(args.model_path, "workers.npy"), all_workers)
+        # np.save(os.path.join(args.model_path, "labels.npy"), all_labels)
+        # np.save(os.path.join(args.model_path, "pred_workers.npy"), all_pred_workers)
 
         majority_voting = ((all_workers<0.5).sum(axis=-1) > (all_workers.shape[-1] // 2))
         hits = (majority_voting == all_labels).sum()

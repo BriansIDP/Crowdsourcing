@@ -20,7 +20,7 @@ def get_data(datapath, model_list, task="halueval"):
         with open(os.path.join(datapath, "truthful_qa.json")) as fin:
             data =json.load(fin)
     elif task == "arenabinary":
-        with open(os.path.join(datapath, "arena_hard_binary_short_subset.json")) as fin:
+        with open(os.path.join(datapath, "arena_hard_binary_bt_short_subset.json")) as fin:
             data = json.load(fin)
     elif task == "halueval":
         with open(os.path.join(datapath, "halueval_dialogue.json")) as fin:
@@ -361,14 +361,14 @@ def compute_kl(data1, data2):
 
 
 def main(args):
-    # model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
+    model_list = ["llama3", "mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
     # model_list = ["mistral", "zephyr", "starling", "openorca", "mistral1", "hermes2", "hermes25", "beluga"]
-    model_list = ["beluga", "mistral1", "openorca"]
+    # model_list = ["beluga", "mistral1", "openorca"]
     # model_list = ["hermes70B", "llama370B", "mixtral", "athene", "qwen272B"]
     # model_list = ["llama3", "llama3-2", "llama3-3", "llama3-4", "llama3-5", "beluga", "beluga2", "beluga3", "beluga4", "beluga5"]
     # model_list.extend([llm + "_rev" for llm in model_list])
     # model_list = [llm + "_rev" for llm in model_list]
-    # model_list = [llm + "_avg" for llm in model_list]
+    model_list = [llm + "_avg" for llm in model_list]
     artificial = False
     v_bar_gen, mu_bar_gen = 2, 2
     mean_1 = np.array([1, 2, 1])

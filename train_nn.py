@@ -93,6 +93,7 @@ def main(args):
             lora_config=lora_config,
             reg_factor=args.reg_factor,
             freeze_epoch=args.freeze_epoch,
+            beta_factor=args.beta_factor,
         ).to(device)
 
     if args.mode in ["pewcrowdae", "pewcrowdaext"] and args.encdecpath != "":
@@ -246,7 +247,7 @@ def eval_one_epoch(
                     labels=(workers < 0.5).float(),
                     withEM=True,
                 )
-            if "pewcrowd" in args.mode:
+            if "crowd" in args.mode or "skillagg" in args.mode:
                 group_labels = workers > 0.5
                 group_hits += (group_labels.view(-1) == hidden.max(dim=-1)[1]).sum()
                 group_total += group_labels.view(-1).size(0)
@@ -256,9 +257,9 @@ def eval_one_epoch(
                 else:
                     hits += (labels[:, 0] == pred).sum()
                 total += pred.size(0)
-            elif args.mode == "gt":
+            elif args.mode == "gt" or args.mode == "btgt":
                 # labels = labels.view(-1)
-                labels = ((workers < 0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
+                # labels = ((workers < 0.5).sum(dim=-1) > (workers.size(-1) // 2)).long()
                 hits += sum(labels.view(-1) == pred.max(dim=-1)[1])
                 total += pred.size(0)
             else:
@@ -271,7 +272,7 @@ def eval_one_epoch(
     if "pewcrowd" in args.mode:
         logging("Group Accuracy: {:.5f}".format(group_hits/group_total), args.logfile)
         logging("Accuracy: {:.5f}".format(hits/total), args.logfile)
-    elif args.mode == "gt":
+    elif args.mode == "gt" or args.mode == "btgt":
         logging("Accuracy: {:.5f}".format(hits/total), args.logfile)
     else:
         logging("Validation Loss: {:.5f}".format(hits/total), args.logfile)
@@ -445,6 +446,12 @@ if __name__ == "__main__":
         type=str,
         default='',
         help="path to the encoder-decoder model",
+    )
+    parser.add_argument(
+        "--beta_factor",
+        type=float,
+        default=0.,
+        help="Bradley Terry model logit factor",
     )
     args = parser.parse_args()
     main(args)

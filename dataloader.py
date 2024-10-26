@@ -79,19 +79,30 @@ class WorkerDataset(Dataset):
         elif self.task == "truthfulqa":
             input_str = "Query: {}\nResponse: {}\nIs the answer truthful to the question?".format(data["query"], data["response"])
         elif self.task == "arenabinary":
-            input_str = "Query: {}\n{}\nIs answer A better than answer B?".format(data["query"], data["response"])
+            if "bt" in self.mode:
+                input_str1 = "Query: {}\nResponse:{}".format(data["query"], data["response1"])
+                input_str2 = "Query: {}\nResponse:{}".format(data["query"], data["response2"])
+            else:
+                input_str = "Query: {}\n{}\nIs answer A better than answer B?".format(data["query"], data["response"])
         elif self.task == "mmlujudge":
             input_str = "Question:\n{}\nAnswer:\n{}\nIs the Answer to the Question correct?".format(data["query"], data["response"])
         elif self.task == "crosscheck":
             input_str = "Passage: {}\nIs there any non-factual or hallucinated information in the passage?".format(data["query"])
         else:
             input_str = "N/A"
-        prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]
+        if "bt" in self.mode:
+            prompt_inputs_1 = self.tokenizer(input_str1, return_tensors="pt")["input_ids"][0]
+            prompt_inputs_2 = self.tokenizer(input_str2, return_tensors="pt")["input_ids"][0]
+            prompt_inputs = [prompt_inputs_1, prompt_inputs_2]
+        else:
+            prompt_inputs = self.tokenizer(input_str, return_tensors="pt")["input_ids"][0]
         return prompt_inputs, torch.tensor(datasamples), torch.tensor(labels)
 
 
 def collate_fn(batch):
     input_ids, workers, labels = zip(*batch)
+    if len(input_ids[0]) > 1:
+        input_ids = [x for xs in input_ids for x in xs]
     input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0).to(device)
     attn_mask = input_ids != 0
     attn_mask[:, 0] = True
@@ -99,3 +110,40 @@ def collate_fn(batch):
     workers = torch.stack(workers).to(device)
     labels = torch.stack(labels).to(device)
     return inputs, workers, labels
+
+
+class SupervisedDataset(Dataset):
+    """Dataset for supervised fine-tuning."""
+    def __init__(
+        self,
+        data_path,
+        tokenizer,
+        multiturn="single",
+    ):
+        super(SupervisedDataset, self).__init__()
+        self.data = []
+        self.multiturn = multiturn
+        with open(data_path) as fin:
+            self.data = json.load(fin)
+        self.tokenizer = tokenizer
+
+    def __len__(self):
+        return len(self.data)
+
+    def preprocessing(self, data):
+        messages = data[:2]
+        input_ids = self.tokenizer.apply_chat_template(
+            messages,
+            return_tensors="pt"
+        ).to(device)
+        return input_ids[0]
+
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+        return self.preprocessing(self.data[idx])
+
+def collate_sft_fn(batch):
+    total_ids = pad_sequence(batch, batch_first=True, padding_value=0) #.to(device)
+    total_label = pad_sequence(batch, batch_first=True, padding_value=-1) #.to(device)
+    attn_mask = total_ids != 0
+    inputs = {"input_ids": total_ids, "attention_mask": attn_mask}
+    return inputs, total_label
