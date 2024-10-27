@@ -135,14 +135,15 @@ class SupervisedDataset(Dataset):
         input_ids = self.tokenizer.apply_chat_template(
             messages,
             return_tensors="pt"
-        ).to(device)
-        return input_ids[0]
+        )[0]
+        return input_ids
 
     def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
         return self.preprocessing(self.data[idx])
 
 def collate_sft_fn(batch):
     total_ids = pad_sequence(batch, batch_first=True, padding_value=0) #.to(device)
+    print(total_ids.size())
     total_label = pad_sequence(batch, batch_first=True, padding_value=-1) #.to(device)
     attn_mask = total_ids != 0
     inputs = {"input_ids": total_ids, "attention_mask": attn_mask}
